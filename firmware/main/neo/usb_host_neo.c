@@ -2171,60 +2171,35 @@ esp_err_t usb_host_neo_list_files(cJSON *files)
         return comms;
     }
 
-    neo_applet_info_t *applets = calloc(32, sizeof(neo_applet_info_t));
-    if (!applets) {
+    ESP_LOGI(TAG, "Neo file scan: AlphaWord (0x%04x) documents only", NEO_APPLET_ID_ALPHAWORD);
+    neo_debug_event("file_scan start applet=0x%04x", NEO_APPLET_ID_ALPHAWORD);
+
+    cJSON *applet_files = cJSON_CreateArray();
+    if (!applet_files) {
         return ESP_ERR_NO_MEM;
     }
-
-    size_t applet_count = 0;
-    esp_err_t err = neo_applet_list(applets, 32, &applet_count);
+    esp_err_t err = neo_file_list_applet(NEO_APPLET_ID_ALPHAWORD, applet_files);
     if (err != ESP_OK) {
-        free(applets);
-        neo_debug_event("file_scan list_applets failed: %s", esp_err_to_name(err));
+        cJSON_Delete(applet_files);
+        neo_debug_event("file_scan fail applet=0x%04x %s", NEO_APPLET_ID_ALPHAWORD, esp_err_to_name(err));
         return err;
     }
 
-    ESP_LOGI(TAG, "Neo file scan: %u applets on device", (unsigned)applet_count);
-    neo_debug_event("file_scan start applets=%u", (unsigned)applet_count);
-
-    for (size_t ai = 0; ai < applet_count; ai++) {
-        uint16_t applet_id = applets[ai].applet_id;
-        if (applet_id == NEO_APPLET_ID_SYSTEM || applets[ai].file_count == 0) {
-            continue;
-        }
-
-        cJSON *applet_files = cJSON_CreateArray();
-        if (!applet_files) {
-            free(applets);
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, applet_files)
+    {
+        cJSON *copy = cJSON_Duplicate(item, 1);
+        if (!copy) {
+            cJSON_Delete(applet_files);
             return ESP_ERR_NO_MEM;
         }
-        err = neo_file_list_applet(applet_id, applet_files);
-        if (err != ESP_OK) {
-            cJSON_Delete(applet_files);
-            ESP_LOGW(TAG, "file scan applet=0x%04x failed: %s", applet_id, esp_err_to_name(err));
-            neo_debug_event("file_scan fail applet=0x%04x %s", applet_id, esp_err_to_name(err));
-            continue;
-        }
-        const cJSON *item = NULL;
-        cJSON_ArrayForEach(item, applet_files)
-        {
-            cJSON *copy = cJSON_Duplicate(item, 1);
-            if (!copy) {
-                cJSON_Delete(applet_files);
-                free(applets);
-                return ESP_ERR_NO_MEM;
-            }
-            cJSON_AddStringToObject(copy, "applet_name", applets[ai].name);
-            cJSON_AddItemToArray(files, copy);
-        }
-        cJSON_Delete(applet_files);
-        esp_task_wdt_reset();
-        vTaskDelay(1);
+        cJSON_AddStringToObject(copy, "applet_name", "AlphaWord");
+        cJSON_AddItemToArray(files, copy);
     }
+    cJSON_Delete(applet_files);
 
-    free(applets);
     neo_debug_event("file_scan done files=%d", cJSON_GetArraySize(files));
-    ESP_LOGI(TAG, "Neo file scan complete: %d files", cJSON_GetArraySize(files));
+    ESP_LOGI(TAG, "Neo file scan complete: %d AlphaWord files", cJSON_GetArraySize(files));
     return ESP_OK;
 }
 

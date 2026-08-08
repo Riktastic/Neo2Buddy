@@ -85,9 +85,11 @@ When a Neo plugs in as keyboard and the setting is on:
 | Backup only if content differs from last local file | Fast common case | Needs stable path naming + content compare |
 | Hash in NVS per file | Avoids reread of disk | Extra state; clock/label changes complicate identity |
 
-**Chosen:** read Neo file → UTF-8 convert → compare to existing
-`{label}_s{NN}_{name}_{YYYYMMDD}.txt` via `neo_import_file_matches()`. Skip
-unchanged. Empty/`alloc_size==0` skipped. Cap raw read at 256 KiB.
+**Chosen:** read Neo file → UTF-8 convert → compare bytes at today's canonical
+`{label}_s{NN}_{name}_{YYYYMMDD}.txt` via `neo_import_file_matches()`. Skip only when
+content is identical. Renaming or editing always writes a new/updated file even if
+another backup shares the display name. Manual backup still skips when any `.txt`
+already holds the same UTF-8 bytes (`neo_import_matching_backup_exists`).
 
 Full “backup everything” remains an **explicit** action (`read-all` / CLI /
 Python `backup_all`) and also ends with RESTART to keyboard.

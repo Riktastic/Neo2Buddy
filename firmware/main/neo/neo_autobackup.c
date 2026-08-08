@@ -69,8 +69,9 @@ static void neo_autobackup_set_phase(const char *phase, uint8_t current)
 static esp_err_t neo_autobackup_try_start(bool return_to_keyboard, bool force);
 
 /**
- * Read one AlphaWord slot, convert to UTF-8, skip if identical to the on-disk
- * backup path for today. Empty / missing slots increment skipped, not saved.
+ * Read one AlphaWord slot, convert to UTF-8, skip only when today's backup file
+ * for this slot already holds the same bytes. Empty / missing slots increment
+ * skipped, not saved.
  */
 static esp_err_t backup_file_if_changed(uint16_t applet_id, uint8_t index, size_t *out_saved,
                                         size_t *out_skipped)
@@ -109,17 +110,6 @@ static esp_err_t backup_file_if_changed(uint16_t applet_id, uint8_t index, size_
         return ESP_OK;
     }
 
-    if (neo_import_matching_backup_exists(text, text_len)) {
-        if (neo_debug_is_verbose()) {
-            ESP_LOGI(TAG, "skip duplicate index=%u name=%s", index, attrs.name);
-        }
-        free(text);
-        if (out_skipped) {
-            (*out_skipped)++;
-        }
-        return ESP_OK;
-    }
-
     char path[256];
     neo_document_t doc = {
         .file_index = index,
@@ -127,7 +117,7 @@ static esp_err_t backup_file_if_changed(uint16_t applet_id, uint8_t index, size_
         .utf8_text = text,
         .utf8_text_length = text_len,
     };
-    err = neo_import_save_document(&doc, path, sizeof(path));
+    err = neo_import_save_document_if_changed(&doc, path, sizeof(path));
     free(text);
     if (err == ESP_ERR_NOT_FOUND || err == ESP_ERR_INVALID_STATE) {
         if (out_skipped) {

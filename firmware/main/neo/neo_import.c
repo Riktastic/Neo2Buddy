@@ -407,6 +407,29 @@ static esp_err_t write_file_atomically(const char *destination_path, const char 
 }
 
 /**
+ * Write UTF-8 bytes to @p destination_path (mkdir/prune handled by caller).
+ */
+static esp_err_t write_prepared_document(const char *destination_path, const char *contents,
+                                         size_t contents_length)
+{
+    if (!destination_path || !contents) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return write_file_atomically(destination_path, contents, contents_length);
+}
+
+static esp_err_t prepare_backup_directory(size_t bytes_needed)
+{
+    const char *base_dir = neo_import_base_dir();
+    if (mkdir(base_dir, 0775) != 0 && errno != EEXIST) {
+        ESP_LOGE(TAG, "Could not create Neo directory: %s errno=%d", base_dir, errno);
+        return ESP_FAIL;
+    }
+    (void)neo_import_prune_old_backups(bytes_needed);
+    return ESP_OK;
+}
+
+/**
  * Save one UTF-8 document after policy checks.
  * @return ESP_OK on write;
  *         ESP_ERR_NOT_FOUND if blank (skipped);
@@ -423,18 +446,14 @@ esp_err_t neo_import_save_document(const neo_document_t *document, char *saved_p
         return ESP_ERR_NOT_FOUND;
     }
     if (neo_import_matching_backup_exists(document->utf8_text, document->utf8_text_length)) {
-        ESP_LOGI(TAG, "skip duplicate document index=%u", document->file_index);
+        ESP_LOGI(TAG, "skip duplicate content index=%u", document->file_index);
         return ESP_ERR_INVALID_STATE;
     }
 
-    const char *base_dir = neo_import_base_dir();
-    if (mkdir(base_dir, 0775) != 0 && errno != EEXIST) {
-        ESP_LOGE(TAG, "Could not create Neo directory: %s errno=%d", base_dir, errno);
-        return ESP_FAIL;
+    esp_err_t prep = prepare_backup_directory(document->utf8_text_length + 4096);
+    if (prep != ESP_OK) {
+        return prep;
     }
-
-    /* Reserve ~4 KiB overhead beyond payload (FAT/SPIFFS metadata, .tmp rename). */
-    (void)neo_import_prune_old_backups(document->utf8_text_length + 4096);
 
     esp_err_t err = neo_import_build_document_path(document->file_index, document->file_name, saved_path,
                                                  saved_path_size);
@@ -442,7 +461,40 @@ esp_err_t neo_import_save_document(const neo_document_t *document, char *saved_p
         return err;
     }
 
-    return write_file_atomically(saved_path, document->utf8_text, document->utf8_text_length);
+    return write_prepared_document(saved_path, document->utf8_text, document->utf8_text_length);
+}
+
+/**
+ * Save when today's canonical path already exists but holds different bytes.
+ * Skips only when @p destination_path exists and its contents match exactly.
+ */
+esp_err_t neo_import_save_document_if_changed(const neo_document_t *document, char *saved_path,
+                                              size_t saved_path_size)
+{
+    if (document == NULL || document->utf8_text == NULL || saved_path == NULL || saved_path_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (neo_import_text_is_blank(document->utf8_text, document->utf8_text_length)) {
+        ESP_LOGI(TAG, "skip blank document index=%u", document->file_index);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    esp_err_t err = neo_import_build_document_path(document->file_index, document->file_name, saved_path,
+                                                 saved_path_size);
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (neo_import_file_matches(saved_path, document->utf8_text, document->utf8_text_length)) {
+        ESP_LOGI(TAG, "skip unchanged content index=%u", document->file_index);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t prep = prepare_backup_directory(document->utf8_text_length + 4096);
+    if (prep != ESP_OK) {
+        return prep;
+    }
+
+    return write_prepared_document(saved_path, document->utf8_text, document->utf8_text_length);
 }
 
 /**

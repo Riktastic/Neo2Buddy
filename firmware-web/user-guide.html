@@ -27,7 +27,7 @@
         <strong>Try the portal first:</strong>
         <a href="https://riktastic.github.io/Neo2Buddy/" target="_blank" rel="noopener noreferrer">Documents showcase</a>
         ·
-        <a href="https://riktastic.github.io/Neo2Buddy/typing.html" target="_blank" rel="noopener noreferrer">Typing &amp; BLE showcase</a>
+        <a href="https://riktastic.github.io/Neo2Buddy/typing.html" target="_blank" rel="noopener noreferrer">Typing &amp; Bluetooth showcase</a>
         (sample data on GitHub Pages — no hardware required).
       </p>
       <section>
@@ -48,7 +48,7 @@
           <li>Use <strong>Backup now</strong> (changed files) or <strong>Backup all</strong> for a manual run.</li>
           <li><strong>Keyboard mode note:</strong> scanning, reading, writing, or backing up files switches Neo to manager mode. Live typing / keyboard emulation pauses until backup finishes (or until you tap <strong>Keyboard mode</strong> after a single file read).</li>
           <li>Empty or whitespace-only documents are skipped.</li>
-          <li>Identical text already on the buddy is not saved again.</li>
+          <li>Identical text already on the buddy is not saved again (byte-for-byte compare, not filename).</li>
           <li>On internal flash, oldest backups are removed automatically when space runs low.</li>
           <li>SD card files are never deleted by factory reset or flash pruning.</li>
         </ul>
@@ -66,12 +66,12 @@
       <section>
         <h2>4. Bluetooth &amp; live typing</h2>
         <ul>
-          <li>Open <strong>Typing &amp; BLE</strong> in the portal nav (or <code>/typing.html</code>). That page monitors keyboard mode only — it does not scan files or list SmartApplets, so your Neo stays in typing emulation.</li>
-          <li>Use <strong>Pair keyboard</strong> once so a phone/PC/tablet bonds the buddy as a BLE keyboard (2-minute window for a <em>new</em> host).</li>
+          <li>Open <strong>Typing &amp; Bluetooth</strong> in the portal nav (or <code>/typing.html</code>). That page monitors keyboard mode only — it does not scan files or list SmartApplets, so your Neo stays in typing emulation.</li>
+          <li>Use <strong>Pair keyboard</strong> once so a phone/PC/tablet bonds the buddy as a Bluetooth keyboard (2-minute window for a <em>new</em> host).</li>
           <li>Bonds are saved on the buddy. After reboot, the buddy re-advertises so the same host can reconnect without pairing again.</li>
           <li>While connected, <strong>keys you press on the Neo are typed on the phone/PC</strong> (live passthrough). The live viewer on the Typing page shows the same text.</li>
           <li><strong>ASM (manager) mode:</strong> Scan, backup, and file actions on the <strong>Documents</strong> page switch the Neo out of keyboard mode. While Bluetooth is connected, those actions may <strong>stop keystrokes</strong> reaching your paired device until keyboard mode returns (automatic after Backup now / Backup all).</li>
-          <li><strong>Send text</strong> (or <strong>Send BLE</strong> on a backup from the Documents page) is optional for pasting longer portal text to the same host.</li>
+          <li><strong>Send text</strong> (from the Typing page or a backup on Documents) is optional for pasting longer portal text to the same host.</li>
         </ul>
       </section>
 

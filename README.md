@@ -14,6 +14,10 @@ The catch is the ending of the writing day: getting those files *off* the machin
 
 Think of it as a quiet stagehand: the Neo stays the star; the Buddy handles the props.
 
+![Bench setup: AlphaSmart Neo2, ESP32-S3 buddy, and power bank](docs/assets/full-setup-powerbank.jpg)
+
+**Try the web portal now** (sample data, no hardware): **[Live demo — Documents](https://riktastic.github.io/Neo2Buddy/)** · [Typing & Bluetooth](https://riktastic.github.io/Neo2Buddy/typing.html) · [User guide](https://riktastic.github.io/Neo2Buddy/user-guide.html)
+
 The USB “manager” language the Buddy speaks was figured out largely by studying **[NeoTools](https://github.com/lykahb/neotools)** by [Borys Lykah](https://github.com/lykahb) (built on earlier work in [AlphaSync](https://github.com/tSoniq/alphasync/)). We stand on that research so you can keep typing.
 
 Current release: **1.0.0-beta.1** in [`releases/1.0.0-beta.1/`](releases/1.0.0-beta.1/). Licensed under [GPL-3.0](LICENSE).
@@ -141,14 +145,25 @@ Default password after a fresh flash / factory reset (until you finish setup): `
 
 ### Try the portal before you flash
 
-A **static showcase** with sample Neo documents, backups, SmartApplets, and live typing runs on GitHub Pages — no hardware required:
+A **static showcase** with sample Neo documents, backups, SmartApplets, and live typing — no hardware required:
 
 | Page | Demo URL |
 |------|----------|
-| Documents (backups, file scan, applets) | [riktastic.github.io/Neo2Buddy](https://riktastic.github.io/Neo2Buddy/) |
-| Typing & Bluetooth | […/typing.html](https://riktastic.github.io/Neo2Buddy/typing.html) |
+| **Documents** (backups, file scan, applets) | **[riktastic.github.io/Neo2Buddy](https://riktastic.github.io/Neo2Buddy/)** |
+| **Typing & Bluetooth** | […/typing.html](https://riktastic.github.io/Neo2Buddy/typing.html) |
+| **User guide** | […/user-guide.html](https://riktastic.github.io/Neo2Buddy/user-guide.html) |
 
-Enable **GitHub Pages → GitHub Actions** in the repo settings once; the [pages workflow](.github/workflows/pages.yml) publishes `firmware-web/` on each push to `main`. Local preview: `python -m http.server` in `firmware-web/` and open `/?demo=1`. Details: [docs/portal-showcase.md](docs/portal-showcase.md).
+#### Enable GitHub Pages (one-time, repo owner)
+
+The workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml) already publishes `firmware-web/` on each push to `main`. You only need to turn Pages on:
+
+1. Open **[github.com/Riktastic/Neo2Buddy/settings/pages](https://github.com/Riktastic/Neo2Buddy/settings/pages)**
+2. Under **Build and deployment**, set **Source** to **GitHub Actions** (not “Deploy from a branch”).
+3. Go to **Actions** → run **Deploy portal showcase** (or push any change under `firmware-web/`).
+4. On first run, approve the **github-pages** environment if GitHub asks.
+5. When the workflow finishes, the site is live at **https://riktastic.github.io/Neo2Buddy/** (can take 1–2 minutes).
+
+Local preview without Pages: `python -m http.server` in `firmware-web/` and open [http://localhost:8080/?demo=1](http://localhost:8080/?demo=1). More detail: [docs/portal-showcase.md](docs/portal-showcase.md).
 
 You can also manage the buddy from the **serial console** (same Wi‑Fi / Neo commands as the portal, plus `device wifi connect` and other maintenance). Connect to the CH340 UART port at **115200** baud after flashing:
 
@@ -175,7 +190,7 @@ While Neo is in keyboard mode, the portal (and UART / OLED) show what you type.
 
 ### Bluetooth keyboard passthrough
 
-Pair the buddy once (**Pair keyboard**, 2-minute window). While connected, **Neo keys are typed on the phone/PC**. Bonds persist across reboot. Portal **Send text** / **Send BLE** can still paste longer text to the same host.
+Pair the buddy once (**Pair keyboard**, 2-minute window). While connected, **Neo keys are typed on the phone/PC**. Bonds persist across reboot. Portal **Send text** can still paste longer text to the same host.
 
 ### Cloud sync (WebDAV & S3)
 

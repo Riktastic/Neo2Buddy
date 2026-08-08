@@ -20,9 +20,18 @@
       <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
         <nav class="portal-nav" aria-label="Portal sections">
           <a class="portal-nav-link" href="index.html">Documents</a>
-          <a class="portal-nav-link is-active" href="typing.html" aria-current="page">Typing &amp; BLE</a>
+          <a class="portal-nav-link is-active" href="typing.html" aria-current="page">Typing &amp; Bluetooth</a>
         </nav>
         <div class="status-chip"><span class="dot" aria-hidden="true"></span><span id="connection">Looking for device</span></div>
+        <button id="logs-button" class="icon-button" type="button" title="View logs" aria-label="View logs" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 19V6.2C4 5.0799 4 4.51984 4.21799 4.09202C4.40973 3.71569 4.71569 3.40973 5.09202 3.21799C5.51984 3 6.0799 3 7.2 3H16.8C17.9201 3 18.4802 3 18.908 3.21799C19.2843 3.40973 19.5903 3.71569 19.782 4.09202C20 4.51984 20 5.0799 20 6.2V17H6C4.89543 17 4 17.8954 4 19ZM4 19C4 20.1046 4.89543 21 6 21H20M9 7H15M9 11H15M19 17V21" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="visually-hidden">Logs</span>
+        </button>
+        <button id="settings-button" class="icon-button" type="button" data-action="settings" title="Device settings" aria-label="Device settings" hidden><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M30.015 12.97l-2.567-0.569c-0.2-0.64-0.462-1.252-0.762-1.841l1.389-2.313c0.518-0.829 0.78-2.047 0-2.829l-1.415-1.414c-0.78-0.781-2.098-0.64-2.894-0.088l-2.251 1.434c-0.584-0.303-1.195-0.563-1.829-0.768l-0.576-2.598c-0.172-0.953-1.005-1.984-2.11-1.984h-2c-1.104 0-1.781 1.047-2 2l-0.642 2.567c-0.678 0.216-1.328 0.492-1.948 0.819l-2.308-1.47c-0.795-0.552-2.114-0.692-2.894 0.088l-1.415 1.414c-0.781 0.782-0.519 2 0 2.828l1.461 2.435c-0.274 0.552-0.517 1.123-0.705 1.72l-2.566 0.569c-0.953 0.171-1.984 1.005-1.984 2.109v2c0 1.105 1.047 1.782 2 2l2.598 0.649c0.179 0.551 0.404 1.080 0.658 1.593l-1.462 2.438c-0.518 0.828-0.78 2.047 0 2.828l1.415 1.414c0.78 0.782 2.098 0.64 2.894 0.089l2.313-1.474c0.623 0.329 1.277 0.608 1.96 0.823l0.64 2.559c0.219 0.953 0.896 2 2 2h2c1.105 0 1.938-1.032 2.11-1.985l0.577-2.604c0.628-0.203 1.23-0.459 1.808-0.758l2.256 1.438c0.796 0.552 2.114 0.692 2.895-0.089l1.415-1.414c0.78-0.782 0.518-2 0-2.828l-1.39-2.317c0.279-0.549 0.521-1.12 0.716-1.714l2.599-0.649c0.953-0.219 2-0.895 2-2v-2c0-1.104-1.031-1.938-1.985-2.11zM30.001 16.939c-0.085 0.061-0.245 0.145-0.448 0.192l-3.708 0.926-0.344 1.051c-0.155 0.474-0.356 0.954-0.597 1.428l-0.502 0.986 1.959 3.267c0.125 0.2 0.183 0.379 0.201 0.485l-1.316 1.314c-0.127-0.040-0.271-0.092-0.341-0.14l-3.292-2.099-1.023 0.529c-0.493 0.256-0.999 0.468-1.503 0.631l-1.090 0.352-0.824 3.723c-0.038 0.199-0.145 0.36-0.218 0.417h-1.8c-0.061-0.085-0.145-0.245-0.191-0.448l-0.921-3.681-1.066-0.338c-0.549-0.173-1.097-0.404-1.63-0.684l-1.028-0.543-3.293 2.099c-0.135 0.091-0.279 0.143-0.409 0.143l-1.311-1.276c0.018-0.104 0.072-0.274 0.181-0.449l2.045-3.408-0.487-0.98c-0.227-0.462-0.407-0.895-0.547-1.325l-0.343-1.052-3.671-0.918c-0.231-0.052-0.398-0.139-0.485-0.2v-1.86c0.001 0.001 0.002 0.001 0.005 0.001 0.034 0 0.198-0.117 0.335-0.142l3.772-0.835 0.346-1.103c0.141-0.449 0.333-0.917 0.588-1.43l0.487-0.98-2.024-3.373c-0.125-0.201-0.184-0.38-0.201-0.485l1.315-1.314c0.128 0.041 0.271 0.093 0.34 0.14l3.354 2.138 1.027-0.542c0.527-0.278 1.073-0.507 1.622-0.682l1.063-0.338 0.912-3.649c0.053-0.231 0.138-0.398 0.2-0.485h1.859c-0.014 0.020 0.115 0.195 0.142 0.339l0.84 3.794 1.089 0.352c0.511 0.165 1.023 0.38 1.523 0.639l1.023 0.532 3.224-2.053c0.135-0.092 0.279-0.143 0.409-0.143l1.313 1.276c-0.017 0.104-0.072 0.276-0.181 0.45l-1.98 3.296 0.505 0.988c0.273 0.533 0.48 1.033 0.635 1.529l0.346 1.104 3.697 0.82c0.224 0.041 0.398 0.171 0.434 0.241zM16.013 9.99c-3.321 0-6.023 2.697-6.023 6.010s2.702 6.010 6.023 6.010 6.023-2.697 6.023-6.009c0-3.313-2.702-6.010-6.023-6.010zM16 20c-2.205 0-4-1.794-4-4s1.794-4 4-4c2.206 0 4 1.794 4 4s-1.794 4-4 4z"></path>
+</svg></button>
         <button id="login-btn" class="button" type="button">Sign In</button>
       </div>
     </header>
@@ -69,15 +78,161 @@
           </button>
           <button class="action-row" type="button" data-action="open-ble-send">
             <span class="action-icon blue">TXT</span>
-            <span><b>Send text</b><small>Paste portal text to the paired BLE host</small></span><i>›</i>
+            <span><b>Send text</b><small>Paste portal text to the paired Bluetooth host</small></span><i>›</i>
           </button>
         </div>
-        <p class="file-size-guidance" style="margin-top:14px">Pairing stays in keyboard mode. While BLE is connected, any ASM action on the Documents page may stop keystrokes reaching your paired device.</p>
+        <p class="file-size-guidance" style="margin-top:14px">Pairing stays in keyboard mode. While Bluetooth is connected, any ASM action on the Documents page may stop keystrokes reaching your paired device.</p>
       </aside>
     </section>
   </main>
 
   <dialog id="action-dialog"><form method="dialog" id="action-dialog-form"><button class="close" type="button" id="action-dialog-close" aria-label="Close">×</button><p class="eyebrow" id="dialog-label">ACTION</p><h2 id="dialog-title">Not connected</h2><p id="dialog-copy">This interactive preview will connect to the device API when firmware endpoints are ready.</p><div id="dialog-actions-default"><button class="button primary" type="submit">Done</button></div><div id="dialog-actions-pairing" hidden><p id="ble-status-line" class="settings-note">Checking Bluetooth status...</p><button class="button primary" type="button" id="ble-start-pairing">Start pairing (2 min)</button><button class="button" type="button" id="ble-stop-pairing">Stop pairing</button></div><div id="dialog-actions-ble-send" hidden><label>Text to send as keystrokes<textarea id="ble-send-text" rows="5" placeholder="Paste or type the text to send..."></textarea></label><pre id="ble-preview-box" class="document-preview" hidden></pre><p id="ble-send-status" class="dialog-status" aria-live="polite"></p><button class="button" type="button" id="ble-preview-btn">Preview</button><button class="button primary" type="button" id="ble-confirm-send">Send keystrokes</button><button class="button" type="button" id="ble-cancel-send">Cancel</button></div></form></dialog>
+
+  <dialog id="format-sd-dialog" class="format-dialog">
+    <form id="format-sd-form">
+      <div class="dialog-heading settings-heading">
+        <div><p class="eyebrow">STORAGE</p><h2>Format SD card</h2></div>
+        <button class="close-dialog" id="format-sd-cancel" type="button" aria-label="Cancel">&times;</button>
+      </div>
+      <p class="settings-note">Formatting will erase all data on the SD card. This operation cannot be undone.</p>
+      <p id="sd-capacity-line" class="settings-note" style="display:none;">Detected card: <strong id="sd-capacity-text">—</strong></p>
+      <div id="sd-progress-wrap" style="display:none;margin:8px 0;align-items:center;gap:8px;">
+        <progress id="sd-progress" value="0" max="100" style="width:100%"></progress>
+        <div id="sd-progress-label" style="min-width:56px;text-align:right;color:var(--ink-muted);">0%</div>
+      </div>
+      <label>To confirm, type <strong>FORMAT</strong> in the box below and click <em>Format SD</em>:</label>
+      <input id="format-confirm-input" type="text" autocomplete="off" placeholder="Type FORMAT to confirm">
+      <div class="dialog-actions">
+        <button class="button" type="button" id="format-sd-cancel-2">Cancel</button>
+        <button class="button danger-action" type="submit" id="format-sd-confirm" disabled>Format SD</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="factory-reset-dialog" class="format-dialog">
+    <form id="factory-reset-form">
+      <div class="dialog-heading settings-heading">
+        <div><p class="eyebrow">DANGER ZONE</p><h2>Factory reset</h2></div>
+        <button class="close-dialog" id="factory-reset-cancel" type="button" aria-label="Cancel">&times;</button>
+      </div>
+      <p class="settings-note">This restores firmware defaults on the buddy. It erases saved Wi‑Fi, cloud sync, portal password, and internal backup files. Files on the SD card are <strong>not</strong> deleted.</p>
+      <label>Re-enter portal password to confirm<input id="factory-reset-password" type="password" autocomplete="current-password" required></label>
+      <div class="dialog-actions">
+        <button class="button" type="button" id="factory-reset-cancel-2">Cancel</button>
+        <button class="button danger-action" type="submit" id="factory-reset-confirm">Reset device</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="settings-dialog">
+    <form id="settings-form">
+      <div class="dialog-heading settings-heading"><div><p class="eyebrow">DEVICE SETTINGS</p><h2>Make it feel like yours.</h2></div><button class="close-dialog" id="settings-close" type="button" aria-label="Close device settings">&times;</button></div>
+      <div class="settings-summary"><span class="settings-mark" aria-hidden="true">N</span><div><strong id="settings-device-title">Neo2 Buddy</strong><small>ESP32-S3 companion</small></div><span class="settings-status">Local only</span></div>
+      <section class="settings-section" aria-labelledby="device-preferences-heading">
+        <h3 id="device-preferences-heading">Device preferences</h3>
+        <label>Device name<input id="settings-device-name" name="device-name" maxlength="32" value="Neo2 Buddy"></label>
+        <label>Neo label<small>Used in backup filenames. Leave blank to use the device name.</small><input id="settings-neo-label" name="neo-label" maxlength="32" placeholder="e.g. RiksNeo"></label>
+        <label>Keyboard layout<select id="settings-keyboard-layout" name="keyboard-layout"><option value="u">User (u)</option><option value="us">US</option><option value="nl">Dutch (nl)</option></select></label>
+        <label>Keyboard sleep<select id="settings-sleep" name="sleep"><option value="5">After 5 minutes</option><option value="10" selected>After 10 minutes</option><option value="30">After 30 minutes</option><option value="never">Never</option></select></label>
+      </section>
+      <section class="settings-section" aria-labelledby="storage-preferences-heading">
+        <h3 id="storage-preferences-heading">Storage and privacy</h3>
+        <label class="toggle-row"><span><b>Keep live typing private</b><small>Clear the monitor when this portal closes.</small></span><input id="settings-private-live" type="checkbox" checked><span class="toggle-track" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span><b>Prefer SD card backups</b><small>Use internal storage only when no card is present.</small></span><input id="settings-prefer-sd" type="checkbox" checked><span class="toggle-track" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span><b>Auto-backup on connect</b><small>When Neo plugs in, briefly leave keyboard mode to backup changed files, then return to keyboard mode. Live typing is interrupted during the backup.</small></span><input id="settings-auto-backup" type="checkbox"><span class="toggle-track" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span><b>Auto cloud upload after backup</b><small>When cloud sync is configured, upload new local backups automatically after a successful backup.</small></span><input id="settings-auto-cloud" type="checkbox"><span class="toggle-track" aria-hidden="true"></span></label>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:10px;">
+          <button id="format-sd" class="button small subtle" type="button" title="Format SD card (destructive)">Format SD...</button>
+          <small style="color:var(--ink-muted);">Erase and reformat the SD card. This action is destructive and requires confirmation.</small>
+        </div>
+        <label class="toggle-row" style="margin-top:6px;"><span><b>Require sign-in to view portal</b><small>When enabled, users must authenticate before accessing the admin portal.</small></span><input id="settings-require-auth" type="checkbox"><span class="toggle-track" aria-hidden="true"></span></label>
+        <div class="settings-section-block" style="margin-top:12px;display:grid;gap:8px;">
+          <h4 style="margin:0;">Portal password</h4>
+          <label>Current password<input id="settings-password-current" type="password" autocomplete="current-password" placeholder="Current portal password"></label>
+          <label>New password<input id="settings-password-new" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></label>
+          <label>Confirm new password<input id="settings-password-confirm" type="password" autocomplete="new-password" minlength="8"></label>
+          <button id="settings-password-save" class="button small" type="button">Change password</button>
+        </div>
+        <div class="settings-danger-zone">
+          <h4>Factory reset</h4>
+          <p class="settings-note">Erase buddy settings and internal backups. SD card files are kept.</p>
+          <button id="factory-reset-open" class="button small danger-action" type="button">Factory reset…</button>
+        </div>
+      </section>
+
+      <section class="settings-section" id="wifi-section" aria-labelledby="wifi-preferences-heading">
+        <h3 id="wifi-preferences-heading">Network</h3>
+        <p id="network-mode-status" class="field-hint" style="margin-top:0"></p>
+        <div class="network-mode-grid settings-mode-grid" role="radiogroup" aria-label="Network mode">
+          <label class="network-mode-card">
+            <input type="radio" name="settings-network-mode" value="direct" checked>
+            <span class="network-mode-title">Direct access</span>
+            <span class="network-mode-copy">Manage the buddy over its own Wi‑Fi hotspot.</span>
+          </label>
+          <label class="network-mode-card">
+            <input type="radio" name="settings-network-mode" value="home">
+            <span class="network-mode-title">Home network</span>
+            <span class="network-mode-copy">Join your router and open the portal from your LAN.</span>
+          </label>
+        </div>
+
+        <div id="settings-direct-fields">
+          <label>Hotspot name<input id="hotspot-ssid" maxlength="32" autocomplete="off"></label>
+          <label>Hotspot password<input id="hotspot-password" type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank to keep current"></label>
+        </div>
+
+        <div id="settings-home-fields" hidden>
+          <div class="wifi-row settings-wifi-row">
+            <label>Available networks
+              <select id="wifi-ssid"><option value="">(scan to list)</option></select>
+            </label>
+            <button type="button" class="button" id="wifi-scan-btn" title="Scan again">Scan</button>
+          </div>
+          <label>Home Wi‑Fi password<input id="wifi-password" type="password" autocomplete="new-password" placeholder="Leave blank to keep current"></label>
+          <label class="toggle-row"><span><b>Use DHCP</b><small>When enabled the device obtains IP settings automatically.</small></span><input id="wifi-dhcp" type="checkbox" checked><span class="toggle-track" aria-hidden="true"></span></label>
+          <div id="static-ip-fields" hidden>
+            <label>IP address<input id="wifi-ip" placeholder="192.168.1.50"></label>
+            <label>Netmask<input id="wifi-netmask" placeholder="255.255.255.0"></label>
+            <label>Gateway<input id="wifi-gateway" placeholder="192.168.1.1"></label>
+            <label>DNS<input id="wifi-dns" placeholder="8.8.8.8"></label>
+          </div>
+          <p class="field-hint network-switch-hint">Switching modes restarts the buddy. Your saved home Wi‑Fi details are kept so you can switch back later.</p>
+        </div>
+      </section>
+      <p class="settings-note" id="settings-note">These preferences are saved in this portal preview. Firmware settings will be applied when the device settings API is available.</p>
+      <div class="dialog-actions"><button class="button" type="button" id="settings-reset">Reset preview</button><button class="button primary" type="submit">Save preferences</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="logs-dialog" class="logs-dialog">
+    <div class="dialog-heading settings-heading">
+      <div><p class="eyebrow">SYSTEM</p><h2>Logs</h2></div>
+      <button class="close-dialog" id="logs-close" type="button" aria-label="Close logs dialog">&times;</button>
+    </div>
+    <div class="logs-toolbar">
+      <div id="logs-filter-group" class="logs-filters" role="tablist" aria-label="Filter by level">
+        <button class="logs-filter is-active" type="button" data-log-filter="ALL" role="tab" aria-selected="true">All</button>
+        <button class="logs-filter" type="button" data-log-filter="DEBUG" role="tab" aria-selected="false">Debug</button>
+        <button class="logs-filter" type="button" data-log-filter="INFO" role="tab" aria-selected="false">Info</button>
+        <button class="logs-filter" type="button" data-log-filter="WARN" role="tab" aria-selected="false">Warn</button>
+        <button class="logs-filter" type="button" data-log-filter="ERROR" role="tab" aria-selected="false">Error</button>
+      </div>
+      <div class="logs-toolbar-options">
+        <label class="logs-field">Per page
+          <select id="logs-limit-select" class="logs-select"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option></select>
+        </label>
+        <label class="logs-field">Sort
+          <select id="logs-sort-select" class="logs-select"><option value="newest" selected>Newest</option><option value="oldest">Oldest</option></select>
+        </label>
+        <div class="logs-pager">
+          <button class="button" id="logs-prev" type="button">Prev</button>
+          <button class="button" id="logs-next" type="button">Next</button>
+        </div>
+      </div>
+    </div>
+    <p class="logs-summary" id="logs-summary" aria-live="polite"></p>
+    <div class="logs-list" id="logs-list"><p class="logs-empty">No logs yet</p></div>
+  </dialog>
 
   <dialog id="login-dialog" class="login-dialog">
     <form id="login-form">

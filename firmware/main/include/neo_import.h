@@ -74,6 +74,14 @@ size_t neo_import_prune_old_backups(size_t bytes_needed);
 esp_err_t neo_import_save_document(const neo_document_t *document,
                                           char *saved_path, size_t saved_path_size);
 
+/**
+ * Auto-backup path: skip only when today's canonical file already has identical
+ * bytes. Renamed documents or edited content always write, even if another
+ * backup file shares the same display name.
+ */
+esp_err_t neo_import_save_document_if_changed(const neo_document_t *document, char *saved_path,
+                                              size_t saved_path_size);
+
 /** Save raw NEO bytes into the imports directory; used for raw file downloads. */
 esp_err_t neo_import_save_raw_document(const uint8_t *neo_data, size_t neo_len,
                                               const char *file_name, uint8_t file_index,

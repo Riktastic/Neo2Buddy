@@ -19,7 +19,7 @@
       <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
         <nav class="portal-nav" aria-label="Portal sections">
           <a class="portal-nav-link is-active" href="index.html" aria-current="page">Documents</a>
-          <a class="portal-nav-link" href="typing.html">Typing &amp; BLE</a>
+          <a class="portal-nav-link" href="typing.html">Typing &amp; Bluetooth</a>
         </nav>
         <div class="status-chip"><span class="dot" aria-hidden="true"></span><span id="connection">Looking for device</span></div>
           <button id="logs-button" class="icon-button" type="button" title="View logs" aria-label="View logs" hidden>
@@ -59,11 +59,11 @@
 
     <section class="workspace dashboard-workspace">
       <aside class="panel quick-panel">
-        <p class="eyebrow">QUICK ACTIONS</p><h2>Take control</h2>
+        <p class="eyebrow">QUICK ACTIONS</p>
         <div class="action-list">
           <a class="action-row action-link" href="typing.html">
             <span class="action-icon blue" aria-hidden="true">⌨</span>
-            <span><b>Live typing &amp; Bluetooth</b><small>Monitor keyboard input and pair a BLE host — stays in keyboard mode</small></span><i>›</i>
+            <span><b>Live typing &amp; Bluetooth</b><small>Monitor keyboard input and pair a Bluetooth host — stays in keyboard mode</small></span><i>›</i>
           </a>
           <button class="action-row" type="button" data-action="wifi">
             <span class="action-icon green" aria-hidden="true">
@@ -94,16 +94,16 @@
                 <option value="ua-pc">Ukrainian PC</option>
                 <option value="ua-mac">Ukrainian Mac</option>
               </select>
-              <button class="button" id="neo-backup-now" type="button" hidden title="Interrupts keyboard mode: backup changed files, then return Neo to keyboard mode">Backup now</button>
-              <button class="button" id="neo-read-all" type="button" hidden title="Interrupts keyboard mode: backup every non-empty file, then return Neo to keyboard mode">Backup all</button>
-              <button class="button primary" id="refresh-neo-files" type="button" hidden title="Interrupts keyboard mode while scanning">Scan NEO</button>
+              <button class="button" id="neo-backup-now" type="button" hidden title="Interrupts keyboard mode: backup changed AlphaWord files, then return Neo to keyboard mode">Backup now</button>
+              <button class="button" id="neo-read-all" type="button" hidden title="Interrupts keyboard mode: backup every non-empty AlphaWord file, then return Neo to keyboard mode">Backup all</button>
+              <button class="button primary" id="refresh-neo-files" type="button" hidden title="Interrupts keyboard mode while scanning AlphaWord documents">Scan NEO</button>
             </div>
           </div>
-          <p class="file-size-guidance" id="neo-documents-guidance">Scan, read, write, and backup switch Neo to ASM (manager) mode only when you click them — not in the background. Use <strong>Auto on connect</strong> to save changed files when Neo plugs in. If Bluetooth is connected, keystrokes to your paired device may stop until keyboard mode returns. Backup now / Backup all return to keyboard mode when finished.</p>
-          <div class="empty-state" id="neo-files-empty"><h3>NEO files will appear here</h3><p>Connect the NEO by USB, then scan it to inspect documents across all installed SmartApplets.</p></div>
+          <p class="file-size-guidance" id="neo-documents-guidance">Scan, read, write, and backup switch Neo to ASM (manager) mode only when you click them — not in the background. Only <strong>AlphaWord</strong> documents (8 slots) are shown and backed up. Use <strong>Auto on connect</strong> to save changed files when Neo plugs in. If Bluetooth is connected, keystrokes to your paired device may stop until keyboard mode returns. Backup now / Backup all return to keyboard mode when finished.</p>
+          <div class="empty-state" id="neo-files-empty"><h3>NEO files will appear here</h3><p>Connect the NEO by USB, then scan it to list AlphaWord documents on the device.</p></div>
           <div class="neo-file-table-wrap" id="neo-file-table-wrap" hidden>
             <table class="neo-file-table">
-              <thead><tr><th scope="col">Document</th><th scope="col">SmartApplet</th><th scope="col">Space</th><th scope="col">Allocated</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+              <thead><tr><th scope="col">Document</th><th scope="col">Slot</th><th scope="col">Allocated</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
               <tbody id="neo-file-list"></tbody>
             </table>
           </div>
@@ -324,26 +324,29 @@
         <div><p class="eyebrow">SYSTEM</p><h2>Logs</h2></div>
         <button class="close-dialog" id="logs-close" type="button" aria-label="Close logs dialog">&times;</button>
       </div>
-      <div class="dialog-controls" style="display:flex;gap:8px;align-items:center;margin:8px 0;">
-        <div id="logs-filter-group" style="display:flex;gap:6px;align-items:center;">
-          <button class="button small" data-log-filter="ALL">All</button>
-          <button class="button small" data-log-filter="DEBUG">Debug</button>
-          <button class="button small" data-log-filter="INFO">Info</button>
-          <button class="button small" data-log-filter="WARN">Warn</button>
-          <button class="button small" data-log-filter="ERROR">Error</button>
+      <div class="logs-toolbar">
+        <div id="logs-filter-group" class="logs-filters" role="tablist" aria-label="Filter by level">
+          <button class="logs-filter is-active" type="button" data-log-filter="ALL" role="tab" aria-selected="true">All</button>
+          <button class="logs-filter" type="button" data-log-filter="DEBUG" role="tab" aria-selected="false">Debug</button>
+          <button class="logs-filter" type="button" data-log-filter="INFO" role="tab" aria-selected="false">Info</button>
+          <button class="logs-filter" type="button" data-log-filter="WARN" role="tab" aria-selected="false">Warn</button>
+          <button class="logs-filter" type="button" data-log-filter="ERROR" role="tab" aria-selected="false">Error</button>
         </div>
-        <label style="margin-left:8px">Per page
-          <select id="logs-limit-select"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option></select>
-        </label>
-        <label style="margin-left:8px">Sort
-          <select id="logs-sort-select"><option value="newest" selected>Newest</option><option value="oldest">Oldest</option></select>
-        </label>
-        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-          <button class="button" id="logs-prev" type="button">Prev</button>
-          <button class="button" id="logs-next" type="button">Next</button>
+        <div class="logs-toolbar-options">
+          <label class="logs-field">Per page
+            <select id="logs-limit-select" class="logs-select"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option></select>
+          </label>
+          <label class="logs-field">Sort
+            <select id="logs-sort-select" class="logs-select"><option value="newest" selected>Newest</option><option value="oldest">Oldest</option></select>
+          </label>
+          <div class="logs-pager">
+            <button class="button" id="logs-prev" type="button">Prev</button>
+            <button class="button" id="logs-next" type="button">Next</button>
+          </div>
         </div>
       </div>
-      <div class="logs-list" id="logs-list"><p class="empty-state">No logs yet</p></div>
+      <p class="logs-summary" id="logs-summary" aria-live="polite"></p>
+      <div class="logs-list" id="logs-list"><p class="logs-empty">No logs yet</p></div>
     </dialog>
 
   <dialog id="action-dialog"><form method="dialog" id="action-dialog-form"><button class="close" type="button" id="action-dialog-close" aria-label="Close">×</button><p class="eyebrow" id="dialog-label">ACTION</p><h2 id="dialog-title">Not connected</h2><p id="dialog-copy">This interactive preview will connect to the device API when firmware endpoints are ready.</p><div id="dialog-actions-default"><button class="button primary" type="submit">Done</button></div><div id="dialog-actions-pairing" hidden><p id="ble-status-line" class="settings-note">Checking Bluetooth status...</p><button class="button primary" type="button" id="ble-start-pairing">Start pairing (2 min)</button><button class="button" type="button" id="ble-stop-pairing">Stop pairing</button></div><div id="dialog-actions-ble-send" hidden><label>Text to send as keystrokes<textarea id="ble-send-text" rows="5" placeholder="Paste or type the text to send..."></textarea></label><pre id="ble-preview-box" class="document-preview" hidden></pre><p id="ble-send-status" class="dialog-status" aria-live="polite"></p><button class="button" type="button" id="ble-preview-btn">Preview</button><button class="button primary" type="button" id="ble-confirm-send">Send keystrokes</button><button class="button" type="button" id="ble-cancel-send">Cancel</button></div></form></dialog>
@@ -371,7 +374,7 @@
       <div class="footer-left"><span id="footer-app-name">Neo2 Buddy Portal</span> <span id="footer-version">v0.9.0-beta</span> <span id="footer-release">(2026-08-01)</span> <span class="footer-beta-note" title="Tested on Dutch Neo2 only; other layouts may differ">Beta · WIP</span></div>
       <div class="footer-right">
         <a href="https://riktastic.github.io/Neo2Buddy/" target="_blank" rel="noopener noreferrer">Live demo</a>
-        <a href="typing.html">Typing &amp; BLE</a>
+        <a href="typing.html">Typing &amp; Bluetooth</a>
         <a href="/user-guide.html">User guide</a>
         <a href="https://github.com/Riktastic" target="_blank" rel="noopener noreferrer">GitHub</a>
         <a href="https://github.com/Riktastic/Neo2Buddy" target="_blank" rel="noopener noreferrer">Source</a>

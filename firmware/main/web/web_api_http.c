@@ -682,7 +682,7 @@ static esp_err_t neo_rescan_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* GET /api/v1/neo/files — list documents across all installed SmartApplets */
+/* GET /api/v1/neo/files — list AlphaWord document slots (0xA000) */
 static esp_err_t neo_require_connected(httpd_req_t *req);
 
 static esp_err_t neo_files_get_handler(httpd_req_t *req)
@@ -756,6 +756,18 @@ static esp_err_t neo_require_connected(httpd_req_t *req)
         return err;
     }
     return ESP_OK;
+}
+
+/** Portal document/backup APIs only support AlphaWord (0xA000) text files. */
+static esp_err_t neo_require_alphaword_applet(httpd_req_t *req, unsigned int applet_id)
+{
+    if (applet_id == (unsigned int)NEO_APPLET_ID_ALPHAWORD) {
+        return ESP_OK;
+    }
+    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"error\":\"alphaword_only\"}", HTTPD_RESP_USE_STRLEN);
+    return ESP_ERR_INVALID_ARG;
 }
 
 static esp_err_t neo_read_request_body(httpd_req_t *req, uint8_t **out_buf, size_t *out_len)
@@ -951,6 +963,9 @@ static esp_err_t neo_file_transfer_handler(httpd_req_t *req, bool is_download)
         httpd_resp_send(req, "not found", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
+    if (neo_require_alphaword_applet(req, applet_id) != ESP_OK) {
+        return ESP_OK;
+    }
 
     neo_file_attr_t attrs;
     uint8_t *raw = NULL;
@@ -1038,6 +1053,9 @@ static esp_err_t neo_file_write_post_handler(httpd_req_t *req)
         httpd_resp_send(req, "bad path", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
+    if (neo_require_alphaword_applet(req, applet_id) != ESP_OK) {
+        return ESP_OK;
+    }
 
     uint8_t *body = NULL;
     size_t body_len = 0;
@@ -1099,6 +1117,9 @@ static esp_err_t neo_file_clear_delete_handler(httpd_req_t *req)
         applet_id > 0xffff || file_index == 0 || file_index > 255) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_send(req, "bad path", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+    if (neo_require_alphaword_applet(req, applet_id) != ESP_OK) {
         return ESP_OK;
     }
 
@@ -1475,6 +1496,9 @@ static esp_err_t neo_files_read_all_post_handler(httpd_req_t *req)
         httpd_resp_send(req, "bad path", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
+    if (neo_require_alphaword_applet(req, applet_id) != ESP_OK) {
+        return ESP_OK;
+    }
     neo_charmap_id_t map = neo_charmap_from_query(req);
     cJSON *saved = cJSON_CreateArray();
     if (!saved) {
@@ -1529,6 +1553,9 @@ static esp_err_t neo_file_by_name_write_post_handler(httpd_req_t *req)
     if (sscanf(req->uri, "/api/v1/neo/applets/%u/files/write", &applet_id) != 1 || applet_id > 0xffff) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_send(req, "bad path", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+    if (neo_require_alphaword_applet(req, applet_id) != ESP_OK) {
         return ESP_OK;
     }
     char target[32];
@@ -1596,6 +1623,9 @@ static esp_err_t neo_file_by_name_clear_delete_handler(httpd_req_t *req)
     if (sscanf(req->uri, "/api/v1/neo/applets/%u/files", &applet_id) != 1 || applet_id > 0xffff) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_send(req, "bad path", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+    if (neo_require_alphaword_applet(req, applet_id) != ESP_OK) {
         return ESP_OK;
     }
     char target[32];

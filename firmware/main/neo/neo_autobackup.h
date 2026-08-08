@@ -8,9 +8,9 @@
  *   quiet plug-in felt broken in testing.
  *
  * Why "changed" instead of always read-all:
- *   Full dumps on every connect are slow and rewrite identical files. We compare
- *   UTF-8 export to the dated local path (neo_import_file_matches). Explicit
- *   "Backup all" stays a separate API for intentional full copies.
+ *   Full dumps on every connect are slow and rewrite identical files. Auto-backup
+ *   compares UTF-8 bytes at today's canonical path (neo_import_file_matches).
+ *   Explicit "Backup all" stays a separate API for intentional full copies.
  *
  * Why cooldown + async:
  *   RESTART re-enumerates as HID and would retrigger forever without a cooldown.

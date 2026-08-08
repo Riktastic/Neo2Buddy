@@ -24,8 +24,8 @@ const syncDialog = document.querySelector('#sync-dialog');
 const settingsDialog = document.querySelector('#settings-dialog');
 
 const actions = {
-  'open-pairing': ['BLUETOOTH', 'Pair keyboard', 'Make the buddy discoverable so a phone or computer can bond as a BLE keyboard. Pairing for a new host stops after two minutes. Bonds are saved and reconnect after reboot. While connected, Neo keys are forwarded live over Bluetooth.'],
-  'open-ble-send': ['BLUETOOTH', 'Send text', 'Optionally preview portal text and type it to the paired host. Neo keys already pass through live when BLE is connected — this is for pasting backups or longer text.'],
+  'open-pairing': ['BLUETOOTH', 'Pair keyboard', 'Make the buddy discoverable so a phone or computer can bond as a Bluetooth keyboard. Pairing for a new host stops after two minutes. Bonds are saved and reconnect after reboot. While connected, Neo keys are forwarded live over Bluetooth.'],
+  'open-ble-send': ['BLUETOOTH', 'Send text', 'Optionally preview portal text and type it to the paired host. Neo keys already pass through live when Bluetooth is connected — this is for pasting backups or longer text.'],
   wifi: ['NETWORK', 'Wi-Fi setup', 'Switch between Direct access and Home network, or update saved Wi‑Fi details.'],
   settings: ['SETTINGS', 'Device settings', 'Control brightness, sleep, device name and recovery options.']
 };
@@ -72,6 +72,7 @@ const logsLimitSelect = document.getElementById('logs-limit-select');
 const logsSortSelect = document.getElementById('logs-sort-select');
 const logsPrev = document.getElementById('logs-prev');
 const logsNext = document.getElementById('logs-next');
+const logsSummary = document.getElementById('logs-summary');
 const logsButton = document.getElementById('logs-button');
 const logsClose = document.getElementById('logs-close');
 let logsPage = 0;
@@ -103,14 +104,26 @@ async function fetchLogs(page = 0) {
   }
 }
 
+function updateLogsSummary(page, perPage, total) {
+  if (!logsSummary) return;
+  if (!total) {
+    logsSummary.textContent = '';
+    return;
+  }
+  const start = page * perPage + 1;
+  const end = Math.min(start + perPage - 1, total);
+  logsSummary.textContent = `Showing ${start}–${end} of ${total}`;
+}
+
 function renderLogsPage(page = 0) {
   const perPage = parseInt(logsLimitSelect?.value || '25', 10);
   const start = page * perPage;
   const pageItems = logsCache.slice(start, start + perPage);
   if (!pageItems || pageItems.length === 0) {
-    logsList.innerHTML = '<p class="empty-state">No logs</p>';
-    logsPrev.disabled = true;
-    logsNext.disabled = true;
+    logsList.innerHTML = '<p class="logs-empty">No logs match this filter.</p>';
+    if (logsPrev) logsPrev.disabled = true;
+    if (logsNext) logsNext.disabled = true;
+    updateLogsSummary(0, perPage, 0);
     return;
   }
   logsList.innerHTML = pageItems.map(item => {
@@ -118,11 +131,20 @@ function renderLogsPage(page = 0) {
     const ts = d.toLocaleString();
     const lvl = (item.level || 'INFO').toUpperCase();
     const msg = escapeHtml(item.msg || '');
-    return `<div class="log-item"><div style="display:flex;gap:8px;align-items:center;width:100%"><div class="log-icon ${lvl}" aria-hidden="true"></div><div class="log-level ${lvl}">${lvl}</div><div class="log-ts">${ts}</div></div><div class="log-msg">${msg}</div></div>`;
+    return (
+      `<article class="log-row log-row-${lvl.toLowerCase()}">` +
+      `<div class="log-row-head">` +
+      `<span class="log-badge log-badge-${lvl.toLowerCase()}">${lvl}</span>` +
+      `<time class="log-ts" datetime="${d.toISOString()}">${ts}</time>` +
+      `</div>` +
+      `<p class="log-msg">${msg}</p>` +
+      `</article>`
+    );
   }).join('');
-  logsPrev.disabled = page === 0;
-  logsNext.disabled = (start + perPage) >= logsCache.length;
+  if (logsPrev) logsPrev.disabled = page === 0;
+  if (logsNext) logsNext.disabled = (start + perPage) >= logsCache.length;
   logsPage = page;
+  updateLogsSummary(page, perPage, logsCache.length);
 }
 
 // Wire controls
@@ -135,8 +157,11 @@ document.querySelectorAll('#logs-filter-group button').forEach(btn => {
   btn.addEventListener('click', (ev) => {
     const v = ev.currentTarget.dataset.logFilter || 'ALL';
     logsFilter = v.toUpperCase();
-    document.querySelectorAll('#logs-filter-group button').forEach(b => b.classList.remove('filter-active'));
-    ev.currentTarget.classList.add('filter-active');
+    document.querySelectorAll('#logs-filter-group button').forEach(b => {
+      const active = b === ev.currentTarget;
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
     logsPage = 0;
     fetchLogs(0);
   });
@@ -489,13 +514,13 @@ async function refreshBleStatus() {
         : (j.bonded > 0
           ? `Idle — ${j.bonded} bonded host${j.bonded === 1 ? '' : 's'}, waiting to reconnect`
           : 'Not paired');
-    line.textContent = `${stateLabel}. ${j.can_send ? 'Host ready for Neo typing and portal Send text.' : 'Connect or pair a BLE host to type.'}`;
+    line.textContent = `${stateLabel}. ${j.can_send ? 'Host ready for Neo typing and portal Send text.' : 'Connect or pair a Bluetooth host to type.'}`;
     if (sBleConnected && sendLine) {
-      sendLine.textContent = 'While BLE is connected, ASM (manager) mode on the Documents page may stop keystrokes until keyboard mode returns.';
+      sendLine.textContent = 'While Bluetooth is connected, ASM (manager) mode on the Documents page may stop keystrokes until keyboard mode returns.';
     } else if (sendLine) {
       sendLine.textContent = j.can_send
         ? 'Host ready. Neo keys pass through; portal text send is optional.'
-        : 'Waiting for BLE host connection...';
+        : 'Waiting for Bluetooth host connection...';
     }
   } catch (error) {
     line.textContent = 'Bluetooth status unavailable.';
@@ -538,7 +563,7 @@ document.querySelector('#ble-preview-btn')?.addEventListener('click', async () =
     blePreviewLength = j.length || text.length;
     previewBox.hidden = false;
     previewBox.textContent = j.preview || text.slice(0, 200);
-    status.textContent = `Ready to send ${blePreviewLength} character${blePreviewLength === 1 ? '' : 's'}. ${j.can_send ? '' : 'Connect a BLE host first.'}`;
+    status.textContent = `Ready to send ${blePreviewLength} character${blePreviewLength === 1 ? '' : 's'}. ${j.can_send ? '' : 'Connect a Bluetooth host first.'}`;
   } catch (error) {
     status.textContent = error.message;
   }
@@ -553,10 +578,10 @@ document.querySelector('#ble-confirm-send')?.addEventListener('click', async () 
   if (!confirm(`Send ${blePreviewLength} characters as keystrokes to the connected host?`)) return;
   try {
     const res = await authFetch('/ble/send', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } });
-    if (res.status === 412) throw new Error('No BLE host connected or preview expired.');
+    if (res.status === 412) throw new Error('No Bluetooth host connected or preview expired.');
     if (!res.ok) throw new Error('Send failed.');
     status.textContent = 'Sending keystrokes...';
-    showNotice('BLE transfer started.', 'success');
+    showNotice('Bluetooth transfer started.', 'success');
   } catch (error) {
     status.textContent = error.message;
   }
@@ -1135,7 +1160,7 @@ async function refreshStatus(){
     if (fmtBtn) fmtBtn.hidden = !j.have_sdcard;
     const conn = document.getElementById('connection');
     if (conn && j.ip) {
-      const ble = j.ble_state === 'connected' ? 'BLE connected' : j.ble_state === 'pairing' ? 'BLE pairing' : 'BLE idle';
+      const ble = j.ble_state === 'connected' ? 'Bluetooth connected' : j.ble_state === 'pairing' ? 'Bluetooth pairing' : 'Bluetooth idle';
       conn.textContent = j.ip ? `${j.ip} · ${ble}` : ble;
     }
     if (IS_DASHBOARD && sNeoKeyboardActive) {
@@ -1298,7 +1323,7 @@ function updatePortalNotices() {
   } else if (IS_TYPING_PAGE && sNeoKeyboardActive) {
     html =
       '<p class="portal-notice portal-notice-info" role="status">' +
-      'Keyboard mode — live typing and BLE passthrough only. No background polling here.</p>';
+      'Keyboard mode — live typing and Bluetooth passthrough only. No background polling here.</p>';
   }
   el.innerHTML = html;
   el.hidden = !html;
@@ -1563,7 +1588,7 @@ async function refreshNeoFiles(opts = {}) {
   }
   if (opts.confirm && !confirmLeaveKeyboardMode('Scanning Neo documents')) return;
   setButtonBusy(button, true, 'Scanning...');
-  guidance.textContent = 'Scanning file attributes across each installed SmartApplet (keyboard mode paused)…';
+  guidance.textContent = 'Scanning AlphaWord document slots (keyboard mode paused)…';
   try {
     const response = await authFetch('/neo/files');
     if (response.status === 401) {
@@ -1582,10 +1607,13 @@ async function refreshNeoFiles(opts = {}) {
       throw new Error(errBody || 'The NEO did not return a document list.');
     }
     const files = await response.json();
-    renderNeoFiles(files);
-    guidance.textContent = files.length
-      ? `${files.length} document${files.length === 1 ? '' : 's'} reported by the connected NEO.`
-      : 'No documents were reported by the connected NEO.';
+    const alphaWordFiles = Array.isArray(files)
+      ? files.filter((file) => Number(file.applet_id || NEO_ALPHAWORD_ID) === NEO_ALPHAWORD_ID)
+      : [];
+    renderNeoFiles(alphaWordFiles);
+    guidance.textContent = alphaWordFiles.length
+      ? `${alphaWordFiles.length} AlphaWord document${alphaWordFiles.length === 1 ? '' : 's'} on the connected NEO.`
+      : 'No AlphaWord documents were reported by the connected NEO.';
   } catch (error) {
     neoFilesEmpty.hidden = false;
     neoFileTableWrap.hidden = true;
@@ -1603,11 +1631,9 @@ function renderNeoFiles(files) {
   neoFileList.innerHTML = files.map((file) => {
     const allocatedSize = Number(file.alloc_size || file.allocated_size || 0);
     const isLarge = allocatedSize >= LOCAL_BACKUP_WARNING_BYTES;
-    const appletName = escapeHtml(file.applet_name || file.applet || 'Unknown applet');
-    const space = Number(file.space || 0) || 'Unbound';
-    const appletId = Number(file.applet_id || 0);
     const fileIndex = Number(file.file_index || file.index || 0);
-    return `<tr${isLarge ? ' class="is-large"' : ''}><td><strong>${escapeHtml(file.name || 'Untitled')}</strong>${isLarge ? '<small class="file-warning">Review before restoring</small>' : ''}</td><td>${appletName}</td><td>${space}</td><td>${formatBytes(allocatedSize)}</td><td class="table-actions"><button class="table-action" type="button" data-file-action="read" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Read</button><button class="table-action" type="button" data-file-action="download" data-applet-id="${appletId}" data-file-index="${fileIndex}">Download</button><button class="table-action" type="button" data-file-action="write" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Write</button><button class="table-action danger-action" type="button" data-file-action="clear" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Clear</button></td></tr>`;
+    const appletId = NEO_ALPHAWORD_ID;
+    return `<tr${isLarge ? ' class="is-large"' : ''}><td><strong>${escapeHtml(file.name || 'Untitled')}</strong>${isLarge ? '<small class="file-warning">Review before restoring</small>' : ''}</td><td>${fileIndex || '—'}</td><td>${formatBytes(allocatedSize)}</td><td class="table-actions"><button class="table-action" type="button" data-file-action="read" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Read</button><button class="table-action" type="button" data-file-action="download" data-applet-id="${appletId}" data-file-index="${fileIndex}">Download</button><button class="table-action" type="button" data-file-action="write" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Write</button><button class="table-action danger-action" type="button" data-file-action="clear" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Clear</button></td></tr>`;
   }).join('');
 }
 
@@ -1904,7 +1930,7 @@ async function backupAllNeoFiles() {
     const response = await apiRequest(`/neo/applets/${NEO_ALPHAWORD_ID}/files/read-all${neoCharmapQuery('?')}`, { method: 'POST' });
     const result = await response.json();
     const kb = result.returned_to_keyboard ? ' Neo returned to keyboard mode.' : ' Could not return Neo to keyboard — use Keyboard mode.';
-    showNotice(`Backed up ${result.count || 0} document${result.count === 1 ? '' : 's'} locally.${kb}`, result.returned_to_keyboard ? 'success' : 'error');
+    showNotice(`Backed up ${result.count || 0} AlphaWord document${result.count === 1 ? '' : 's'} locally.${kb}`, result.returned_to_keyboard ? 'success' : 'error');
     await refreshFiles();
     await refreshStatus();
   } catch (error) {
@@ -1924,7 +1950,7 @@ async function backupNowNeoFiles() {
   setButtonBusy(button, true, 'Starting…');
   try {
     await apiRequest('/neo/autobackup', { method: 'POST' });
-    showNotice('Backup started — changed files only, then keyboard mode.', 'success');
+    showNotice('Backup started — changed AlphaWord files only, then keyboard mode.', 'success');
     sAwaitingBackupFinish = true;
     setBackupBusyUi(true);
     await refreshStatus();
@@ -2134,7 +2160,7 @@ function renderBackupFile(file) {
   const warning = isLarge
     ? '<small class="file-warning">Large backup: verify the NEO file limit before restoring.</small>'
     : '';
-  return `<div class="action-row backup-row${isLarge ? ' is-large' : ''}"><span class="action-icon green">TXT</span><span><b>${escapeHtml(file.name)}</b><small>${formatBytes(file.size)} · ${escapeHtml(modified)}</small>${warning}</span><span class="table-actions"><button class="table-action" type="button" data-backup-action="view" data-name="${escapeHtml(file.name)}">View</button><button class="table-action" type="button" data-backup-action="send" data-name="${escapeHtml(file.name)}">Send BLE</button><button class="table-action danger-action" type="button" data-backup-action="delete" data-name="${escapeHtml(file.name)}">Delete</button></span></div>`;
+  return `<div class="action-row backup-row${isLarge ? ' is-large' : ''}"><span class="action-icon green">TXT</span><span><b>${escapeHtml(file.name)}</b><small>${formatBytes(file.size)} · ${escapeHtml(modified)}</small>${warning}</span><span class="table-actions"><button class="table-action" type="button" data-backup-action="view" data-name="${escapeHtml(file.name)}">View</button><button class="table-action" type="button" data-backup-action="send" data-name="${escapeHtml(file.name)}">Send text</button><button class="table-action danger-action" type="button" data-backup-action="delete" data-name="${escapeHtml(file.name)}">Delete</button></span></div>`;
 }
 
 document.querySelector('#upload-file')?.addEventListener('click', () => document.querySelector('#upload-file-input').click());
