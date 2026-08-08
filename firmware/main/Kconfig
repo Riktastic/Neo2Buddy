@@ -1,0 +1,39 @@
+menu "Neo2 Buddy Configuration"
+
+config SUPPORT_BATTERY
+    bool "Enable battery support"
+    default y
+    help
+      Enable voltage sensing and battery percentage reporting. When disabled
+      battery-related code and UI features will be omitted.
+
+config SUPPORT_SDCARD
+    bool "Enable microSD card support"
+    default y
+    help
+      Enable mounting and use of an external microSD card. When disabled the
+      SD mount attempts are omitted and only internal flash storage is used.
+
+config SUPPORT_OLED
+    bool "Enable 1.3in OLED status display"
+    default y
+    help
+      Build with OLED support for a small on-device status display. When
+      disabled only the web UI will be available for status and control.
+
+config BUDDY_RUN_SELF_TEST
+    bool "Run boot self-test suite"
+    default y
+    help
+      Run lightweight smoke tests once at boot and log results to the
+      device log buffer. Disable to shorten boot time after validation.
+
+config BUDDY_UART_CMD
+    bool "Enable protected UART command console"
+    default y
+    help
+      Start an interactive command line on the serial port (115200). Use
+      "login <password>" (same as the web portal) before Neo USB commands.
+      Intended for development and automated testing over the CH340 UART.
+
+endmenu

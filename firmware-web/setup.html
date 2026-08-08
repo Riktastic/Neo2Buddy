@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f0e8">
+  <title>Neo2 Buddy Setup</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="css/portal.css">
+</head>
+<body class="setup-page">
+  <main class="app-shell setup-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="app-name">Neo2 Buddy Portal</p>
+        <h1 id="header-device-name">First-time setup</h1>
+      </div>
+      <div class="status-chip"><span class="dot" aria-hidden="true"></span><span id="mode-chip">Direct access</span></div>
+    </header>
+
+    <section class="hero" aria-labelledby="setup-heading">
+      <div>
+        <p class="eyebrow">FIRST-TIME SETUP</p>
+        <h2 id="setup-heading">Make this NEO<br><em>yours.</em></h2>
+      </div>
+    </section>
+
+    <section class="panel setup-panel" aria-labelledby="setup-form-title">
+      <form id="setup-form" class="setup-form">
+        <div class="setup-heading">
+          <h2 id="setup-form-title" class="visually-hidden">Device configuration</h2>
+          <p>Choose how you want to reach the buddy. <strong>Direct access</strong> keeps its own Wi‑Fi hotspot. <strong>Home network</strong> joins your router.</p>
+        </div>
+        <div class="setup-steps" aria-hidden="true"><span class="active">1</span><span>2</span><span>3</span></div>
+
+        <fieldset class="network-mode-fieldset">
+          <legend class="visually-hidden">Network mode</legend>
+          <div class="network-mode-grid" role="radiogroup" aria-label="Network mode">
+            <label class="network-mode-card">
+              <input type="radio" name="network-mode" value="direct" checked>
+              <span class="network-mode-title">Direct access</span>
+              <span class="network-mode-copy">Connect to the buddy’s own Wi‑Fi hotspot at <code>192.168.4.1</code>. You can change the hotspot name and password.</span>
+            </label>
+            <label class="network-mode-card">
+              <input type="radio" name="network-mode" value="home">
+              <span class="network-mode-title">Home network</span>
+              <span class="network-mode-copy">Join your home router so you can open the portal from your LAN without switching Wi‑Fi networks.</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <label for="device-name">Device name
+          <input id="device-name" maxlength="32" value="Neo2 Buddy" autocomplete="off" required>
+        </label>
+
+        <div id="direct-fields">
+          <label for="hotspot-ssid">Hotspot name
+            <input id="hotspot-ssid" maxlength="32" placeholder="Neo2 Buddy" autocomplete="off">
+          </label>
+          <label for="hotspot-password">Hotspot password
+            <input id="hotspot-password" type="password" maxlength="64" value="neo2buddy" autocomplete="new-password" minlength="8" required>
+          </label>
+          <p class="field-hint">Use at least 8 characters. This is the password for the buddy’s own Wi‑Fi network.</p>
+        </div>
+
+        <div id="home-fields" hidden>
+          <div class="wifi-row">
+            <label for="wifi-ssid-select">Home Wi‑Fi
+              <select id="wifi-ssid-select">
+                <option value="">Scanning nearby networks…</option>
+              </select>
+            </label>
+            <button type="button" class="button" id="scan-btn" title="Scan again">Scan</button>
+          </div>
+          <label id="manual-ssid-wrap" for="wifi-ssid-manual" hidden>Network name (manual)
+            <input id="wifi-ssid-manual" maxlength="32" placeholder="Type network name" autocomplete="off">
+          </label>
+          <p class="field-hint">Pick a network from the list, or choose “Enter manually…” to type the name yourself.</p>
+          <label for="wifi-password">Home Wi‑Fi password
+            <input id="wifi-password" type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank for open networks">
+          </label>
+        </div>
+
+        <label for="portal-password">Portal password
+          <input id="portal-password" type="password" maxlength="63" autocomplete="new-password" minlength="8" required>
+        </label>
+        <label for="portal-password-confirm">Confirm portal password
+          <input id="portal-password-confirm" type="password" maxlength="63" autocomplete="new-password" minlength="8" required>
+        </label>
+        <p class="field-hint">You will use this password to sign in to the admin portal. Choose at least 8 characters (not the default <code>neo2buddy</code>).</p>
+
+        <p class="field-hint">You can change network settings later in the portal under Settings → Network.</p>
+
+        <p id="status" class="setup-status" role="status"></p>
+
+        <div class="dialog-actions">
+          <button type="submit" class="button primary" id="save-btn">Save &amp; continue</button>
+        </div>
+      </form>
+    </section>
+
+    <p class="setup-foot" id="portal-link" hidden>Setup complete. <a href="/">Open the admin portal</a></p>
+  </main>
+
+  <style>
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    [hidden] { display: none !important; }
+  </style>
+
+  <script>
+    const API = '/api/v1/onboarding';
+    const SCAN_API = '/api/v1/wifi/scan';
+    const MANUAL_VALUE = '__manual__';
+    const statusEl = document.getElementById('status');
+    const ssidSelect = document.getElementById('wifi-ssid-select');
+    const manualWrap = document.getElementById('manual-ssid-wrap');
+    const manualInput = document.getElementById('wifi-ssid-manual');
+    const scanBtn = document.getElementById('scan-btn');
+    const directFields = document.getElementById('direct-fields');
+    const homeFields = document.getElementById('home-fields');
+    const modeChip = document.getElementById('mode-chip');
+    const modeInputs = document.querySelectorAll('input[name="network-mode"]');
+
+    function selectedMode() {
+      const checked = document.querySelector('input[name="network-mode"]:checked');
+      return checked ? checked.value : 'direct';
+    }
+
+    function syncModeUi() {
+      const home = selectedMode() === 'home';
+      directFields.hidden = home;
+      homeFields.hidden = !home;
+      modeChip.textContent = home ? 'Home network' : 'Direct access';
+      if (home && ssidSelect.options.length <= 1) scanNetworks();
+    }
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg || '';
+      statusEl.className = 'setup-status' + (kind ? ' ' + kind : '');
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, (ch) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[ch]);
+    }
+
+    function syncManualVisibility() {
+      const manual = ssidSelect.value === MANUAL_VALUE;
+      manualWrap.hidden = !manual;
+      if (manual) manualInput.focus();
+    }
+
+    function getWifiSsid() {
+      if (ssidSelect.value === MANUAL_VALUE) {
+        return manualInput.value.trim();
+      }
+      return ssidSelect.value.trim();
+    }
+
+    function defaultHotspotName(deviceName) {
+      if (deviceName.startsWith('Neo2')) return deviceName;
+      return 'Neo2-' + deviceName;
+    }
+
+    function syncHotspotDefault() {
+      const deviceName = document.getElementById('device-name').value.trim() || 'Neo2 Buddy';
+      const hotspot = document.getElementById('hotspot-ssid');
+      if (!hotspot.dataset.userEdited) {
+        hotspot.value = defaultHotspotName(deviceName);
+      }
+    }
+
+    async function scanNetworks() {
+      scanBtn.disabled = true;
+      ssidSelect.innerHTML = '<option value="">Scanning…</option>';
+      setStatus('Scanning for Wi‑Fi networks…');
+      try {
+        const res = await fetch(SCAN_API);
+        if (!res.ok) throw new Error('Scan failed');
+        const networks = await res.json();
+        if (!Array.isArray(networks) || networks.length === 0) {
+          ssidSelect.innerHTML = [
+            '<option value="">No networks found</option>',
+            `<option value="${MANUAL_VALUE}">Enter manually…</option>`
+          ].join('');
+          setStatus('No networks found. Enter the name manually.', 'error');
+          syncManualVisibility();
+          return;
+        }
+        networks.sort((a, b) => (b.rssi || 0) - (a.rssi || 0));
+        const options = ['<option value="">Select your home network</option>'];
+        for (const ap of networks) {
+          const ssid = ap.ssid || '';
+          if (!ssid) continue;
+          const label = `${ssid} (${ap.rssi} dBm)`;
+          options.push(`<option value="${escapeHtml(ssid)}">${escapeHtml(label)}</option>`);
+        }
+        options.push(`<option value="${MANUAL_VALUE}">Enter manually…</option>`);
+        ssidSelect.innerHTML = options.join('');
+        setStatus(`Found ${networks.length} network${networks.length === 1 ? '' : 's'}.`, 'ok');
+      } catch (err) {
+        ssidSelect.innerHTML = [
+          '<option value="">Scan unavailable</option>',
+          `<option value="${MANUAL_VALUE}">Enter manually…</option>`
+        ].join('');
+        setStatus('Could not scan. Enter your network name manually.', 'error');
+      } finally {
+        scanBtn.disabled = false;
+        syncManualVisibility();
+      }
+    }
+
+    async function submitSetup(ev) {
+      ev.preventDefault();
+      const mode = selectedMode();
+      const deviceName = document.getElementById('device-name').value.trim() || 'Neo2 Buddy';
+      const body = {
+        device_name: deviceName,
+        network_mode: mode,
+        onboarding_complete: true,
+        require_portal_auth: true
+      };
+
+      const portalPassword = document.getElementById('portal-password').value;
+      const portalConfirm = document.getElementById('portal-password-confirm').value;
+      if (portalPassword.length < 8) {
+        setStatus('Portal password must be at least 8 characters.', 'error');
+        return;
+      }
+      if (portalPassword !== portalConfirm) {
+        setStatus('Portal passwords do not match.', 'error');
+        return;
+      }
+      if (portalPassword === 'neo2buddy') {
+        setStatus('Choose a new portal password (not the factory default).', 'error');
+        return;
+      }
+      body.portal_password = portalPassword;
+
+      if (mode === 'direct') {
+        const hotspotSsid = document.getElementById('hotspot-ssid').value.trim() || defaultHotspotName(deviceName);
+        const hotspotPassword = document.getElementById('hotspot-password').value;
+        if (hotspotPassword.length < 8) {
+          setStatus('Hotspot password must be at least 8 characters.', 'error');
+          return;
+        }
+        body.hotspot_ssid = hotspotSsid;
+        body.hotspot_password = hotspotPassword;
+      } else {
+        const ssid = getWifiSsid();
+        if (!ssid) {
+          setStatus('Choose your home Wi‑Fi network.', 'error');
+          return;
+        }
+        body.wifi_ssid = ssid;
+        body.wifi_password = document.getElementById('wifi-password').value;
+      }
+
+      setStatus('Saving…');
+      document.getElementById('save-btn').disabled = true;
+      try {
+        const res = await fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || ('Save failed (' + res.status + ')'));
+        }
+        const result = await res.json().catch(() => ({}));
+        if (mode === 'home') {
+          setStatus('Saved. The buddy is restarting to join your home network. Switch your phone back to your home Wi‑Fi in about a minute, then open the portal at its new IP (check your router\'s device list).', 'ok');
+        } else {
+          setStatus('Saved. The buddy is restarting. Rejoin its hotspot, then open http://192.168.4.1/', 'ok');
+        }
+        if (result.rebooting) {
+          document.getElementById('save-btn').disabled = true;
+        }
+      } catch (err) {
+        setStatus(err.message || 'Could not save setup.', 'error');
+        document.getElementById('save-btn').disabled = false;
+      }
+    }
+
+    modeInputs.forEach((input) => input.addEventListener('change', syncModeUi));
+    ssidSelect.addEventListener('change', syncManualVisibility);
+    scanBtn.addEventListener('click', scanNetworks);
+    document.getElementById('device-name').addEventListener('input', syncHotspotDefault);
+    document.getElementById('hotspot-ssid').addEventListener('input', (ev) => {
+      ev.target.dataset.userEdited = ev.target.value.trim() ? '1' : '';
+    });
+    document.getElementById('setup-form').addEventListener('submit', submitSetup);
+
+    fetch(API)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (j && j.wifi_recovery) {
+          document.getElementById('header-device-name').textContent = 'Fix home Wi‑Fi';
+          document.getElementById('setup-heading').innerHTML = 'Home network<br><em>couldn\'t connect.</em>';
+          document.querySelector('.hero .eyebrow').textContent = 'WI‑FI RECOVERY';
+          document.querySelector('.setup-heading p').textContent =
+            'The buddy couldn\'t join your home network (wrong password, network missing, or router unreachable). ' +
+            'Connect to its hotspot, then update the network settings below.';
+          setStatus('Join the buddy\'s Wi‑Fi hotspot, then fix your home network settings.', 'error');
+        } else if (j && j.onboarding_complete) {
+          document.getElementById('portal-link').hidden = false;
+          window.location.replace('/');
+          return;
+        }
+        if (!j) return;
+        if (j.device_name) {
+          document.getElementById('device-name').value = j.device_name;
+          if (!j.wifi_recovery) {
+            document.getElementById('header-device-name').textContent = j.device_name;
+          }
+        }
+        if (j.hotspot_ssid) {
+          document.getElementById('hotspot-ssid').value = j.hotspot_ssid;
+          document.getElementById('hotspot-ssid').dataset.userEdited = '1';
+        }
+        if (j.network_mode === 'home' || j.wifi_recovery) {
+          document.querySelector('input[name="network-mode"][value="home"]').checked = true;
+        }
+        if (j.wifi_ssid) {
+          const opt = document.createElement('option');
+          opt.value = j.wifi_ssid;
+          opt.textContent = j.wifi_ssid + ' (saved)';
+          opt.selected = true;
+          ssidSelect.innerHTML = '';
+          ssidSelect.appendChild(opt);
+          ssidSelect.insertAdjacentHTML('beforeend', `<option value="${MANUAL_VALUE}">Enter manually…</option>`);
+        }
+        syncModeUi();
+        syncHotspotDefault();
+      })
+      .catch(() => {
+        syncHotspotDefault();
+      });
+
+    syncModeUi();
+  </script>
+</body>
+</html>

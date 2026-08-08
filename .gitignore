@@ -1,0 +1,45 @@
+# Local reference material (NeoTools snapshot, Dutch NEO software installers, etc.)
+# Clone https://github.com/lykahb/neotools separately if you need the upstream reference.
+inspiration/
+
+# ESP-IDF build output
+firmware/build/
+firmware/test/build/
+firmware/managed_components/
+firmware/sdkconfig.old
+firmware/test/sdkconfig.old
+firmware/dependencies.lock
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# IDE / editor
+.vscode/
+.idea/
+.cursor/
+*.swp
+*~
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Secrets and local env
+.env
+.env.*
+*.pem
+credentials.json
+
+# Logs and temp files
+*.log
+*.tmp
+*.bak

@@ -1,0 +1,29 @@
+name: Firmware tests
+
+on:
+  push:
+    paths:
+      - 'firmware/**'
+      - 'web/**'
+      - '.github/workflows/firmware-test.yml'
+  pull_request:
+    paths:
+      - 'firmware/**'
+      - 'web/**'
+      - '.github/workflows/firmware-test.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:release-v5.3
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build production firmware
+        run: idf.py build
+
+      - name: Build Unity test firmware
+        run: idf.py -C test set-target esp32s3 && idf.py -C test build

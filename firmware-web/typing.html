@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="application-name" content="Neo2 Buddy Portal">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f0e8">
+  <title>Live typing &amp; Bluetooth — Neo2 Buddy</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="css/login.css">
+  <link rel="stylesheet" href="css/portal.css">
+</head>
+<body data-page="typing">
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="app-name">Neo2 Buddy Portal</p>
+        <h1 id="header-device-name">Live typing &amp; Bluetooth</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <nav class="portal-nav" aria-label="Portal sections">
+          <a class="portal-nav-link" href="index.html">Documents</a>
+          <a class="portal-nav-link is-active" href="typing.html" aria-current="page">Typing &amp; BLE</a>
+        </nav>
+        <div class="status-chip"><span class="dot" aria-hidden="true"></span><span id="connection">Looking for device</span></div>
+        <button id="login-btn" class="button" type="button">Sign In</button>
+      </div>
+    </header>
+
+    <section class="hero typing-hero" aria-labelledby="typing-heading">
+      <div>
+        <p class="eyebrow">KEYBOARD MODE</p>
+        <h2 id="typing-heading">Type on the Neo,<br><em>see it here or over Bluetooth.</em></h2>
+        <p class="typing-lead">This page only monitors keyboard mode. It does not scan files or list SmartApplets, so your Neo stays in typing emulation until you open <a href="index.html">Documents</a>.</p>
+      </div>
+    </section>
+
+    <section class="stat-grid typing-stat-grid" aria-label="Connection status">
+      <article class="stat-card neo-card"><span class="label">NEO connection</span><strong id="neo-connection">Looking</strong><small id="neo-connection-detail">Connect the NEO with USB</small></article>
+      <article class="stat-card neo-card"><span class="label">Model</span><strong id="neo-model">--</strong><small id="neo-model-detail">Reported by the NEO when connected</small></article>
+    </section>
+
+    <div id="portal-notices" class="portal-notices" hidden aria-live="polite"></div>
+
+    <section class="workspace typing-workspace">
+      <section class="workspace live-viewer-section" aria-label="Live keyboard viewer">
+        <article class="panel monitor-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">LIVE KEYBOARD</p><h2>What the NEO is typing</h2></div>
+            <div class="live-controls" style="display:flex;align-items:center;gap:0.5rem">
+              <button class="button" id="pause-live" type="button" title="Pause updates">Pause</button>
+              <button class="button" id="toggle-raw" type="button" title="Toggle raw HID view">Raw</button>
+              <button class="button" id="clear-live" type="button" title="Clear monitor">Clear</button>
+              <div id="follow-indicator" class="follow-indicator" aria-hidden="true">Follow</div>
+            </div>
+          </div>
+          <p class="file-size-guidance" id="live-keyboard-guidance">Updates only while this tab is open and Neo is in keyboard mode. No file or applet requests run here. If you open Documents and run Scan or Backup, Neo enters ASM mode — live typing and Bluetooth keystrokes pause until keyboard mode returns.</p>
+          <div id="live-text" class="live-text" aria-live="polite" role="log">Waiting for NEO keyboard input...</div>
+        </article>
+      </section>
+
+      <aside class="panel quick-panel typing-quick-panel">
+        <p class="eyebrow">BLUETOOTH</p>
+        <h2>Wireless keyboard</h2>
+        <div class="action-list">
+          <button class="action-row" type="button" data-action="open-pairing">
+            <span class="action-icon blue" aria-hidden="true">⌨</span>
+            <span><b>Pair keyboard</b><small>Bond a phone or PC — Neo keys pass through while connected</small></span><i>›</i>
+          </button>
+          <button class="action-row" type="button" data-action="open-ble-send">
+            <span class="action-icon blue">TXT</span>
+            <span><b>Send text</b><small>Paste portal text to the paired BLE host</small></span><i>›</i>
+          </button>
+        </div>
+        <p class="file-size-guidance" style="margin-top:14px">Pairing stays in keyboard mode. While BLE is connected, any ASM action on the Documents page may stop keystrokes reaching your paired device.</p>
+      </aside>
+    </section>
+  </main>
+
+  <dialog id="action-dialog"><form method="dialog" id="action-dialog-form"><button class="close" type="button" id="action-dialog-close" aria-label="Close">×</button><p class="eyebrow" id="dialog-label">ACTION</p><h2 id="dialog-title">Not connected</h2><p id="dialog-copy">This interactive preview will connect to the device API when firmware endpoints are ready.</p><div id="dialog-actions-default"><button class="button primary" type="submit">Done</button></div><div id="dialog-actions-pairing" hidden><p id="ble-status-line" class="settings-note">Checking Bluetooth status...</p><button class="button primary" type="button" id="ble-start-pairing">Start pairing (2 min)</button><button class="button" type="button" id="ble-stop-pairing">Stop pairing</button></div><div id="dialog-actions-ble-send" hidden><label>Text to send as keystrokes<textarea id="ble-send-text" rows="5" placeholder="Paste or type the text to send..."></textarea></label><pre id="ble-preview-box" class="document-preview" hidden></pre><p id="ble-send-status" class="dialog-status" aria-live="polite"></p><button class="button" type="button" id="ble-preview-btn">Preview</button><button class="button primary" type="button" id="ble-confirm-send">Send keystrokes</button><button class="button" type="button" id="ble-cancel-send">Cancel</button></div></form></dialog>
+
+  <dialog id="login-dialog" class="login-dialog">
+    <form id="login-form">
+      <div class="login-intro"><span class="login-mark" aria-hidden="true">N</span><p class="eyebrow">LOCAL DEVICE ACCESS</p><h2>Welcome back.</h2><p>Sign in to monitor live typing and manage Bluetooth on this Neo2 Buddy.</p></div>
+      <label class="login-field">Portal password<input id="login-password" type="password" autocomplete="current-password" required placeholder="Enter your password"></label>
+      <p class="login-error" id="login-error" role="alert" hidden></p>
+      <button id="login-submit" class="button primary login-submit">Sign in securely <span aria-hidden="true">&rarr;</span></button>
+      <div class="login-footer"><span>Only this device can verify your password.</span><button type="button" id="login-cancel" class="text-button">Cancel</button></div>
+    </form>
+  </dialog>
+
+  <script src="js/demo.js"></script>
+  <script src="js/app.js"></script>
+  <footer class="portal-footer" aria-hidden="false">
+    <div class="portal-footer-inner">
+      <div class="footer-left"><span id="footer-app-name">Neo2 Buddy Portal</span> <span id="footer-version">v0.9.0-beta</span> <span class="footer-beta-note" title="Tested on Dutch Neo2 only; other layouts may differ">Beta · WIP</span></div>
+      <div class="footer-right">
+        <a href="https://riktastic.github.io/Neo2Buddy/" target="_blank" rel="noopener noreferrer">Live demo</a>
+        <a href="index.html">Documents</a>
+        <a href="/user-guide.html">User guide</a>
+        <a href="https://github.com/Riktastic/Neo2Buddy" target="_blank" rel="noopener noreferrer">Source</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

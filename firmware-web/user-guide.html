@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f0e8">
+  <title>Neo2 Buddy — User guide</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="css/portal.css">
+</head>
+<body class="setup-page">
+  <main class="app-shell setup-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Neo2 Buddy</p>
+        <h1>User guide</h1>
+      </div>
+      <a class="button" href="/">Back to portal</a>
+      <a class="button primary" href="https://riktastic.github.io/Neo2Buddy/" target="_blank" rel="noopener noreferrer">Live demo</a>
+    </header>
+
+    <article class="panel setup-panel" style="display:grid;gap:1.25rem;max-width:42rem">
+      <p class="file-size-guidance" style="margin:0;padding:12px 14px;border:1px solid #d4a72c;border-radius:4px;background:#fbf0d4;color:#5a4518">
+        <strong>Beta — work in progress.</strong> Firmware and portal behaviour may change. So far this has only been tested with a <strong>Dutch Neo2</strong>. UK, US, and other regional keyboard layouts may differ slightly for live typing, Bluetooth passthrough, and file import/export — we have not been able to test other variants yet.
+      </p>
+      <p class="file-size-guidance" style="margin:0;padding:12px 14px;border-left:3px solid var(--blue);background:#e9f2f3">
+        <strong>Try the portal first:</strong>
+        <a href="https://riktastic.github.io/Neo2Buddy/" target="_blank" rel="noopener noreferrer">Documents showcase</a>
+        ·
+        <a href="https://riktastic.github.io/Neo2Buddy/typing.html" target="_blank" rel="noopener noreferrer">Typing &amp; BLE showcase</a>
+        (sample data on GitHub Pages — no hardware required).
+      </p>
+      <section>
+        <h2>1. First connection</h2>
+        <ol>
+          <li>Power the buddy and join its Wi‑Fi hotspot (default name starts with <strong>Neo2</strong>).</li>
+          <li>Open <code>http://192.168.4.1</code> (or the address shown on the OLED).</li>
+          <li>Complete first-time setup: choose Direct access or Home network, set a <strong>portal password</strong> (8+ characters).</li>
+          <li>After reboot, sign in with that password. Portal sign-in is required by default.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>2. Daily backups</h2>
+        <ul>
+          <li>Connect the AlphaSmart Neo by USB to the buddy.</li>
+          <li>Turn on <strong>Auto on connect</strong> on the Documents or Backups panel (or in Settings) to save changed files automatically when you plug in.</li>
+          <li>Use <strong>Backup now</strong> (changed files) or <strong>Backup all</strong> for a manual run.</li>
+          <li><strong>Keyboard mode note:</strong> scanning, reading, writing, or backing up files switches Neo to manager mode. Live typing / keyboard emulation pauses until backup finishes (or until you tap <strong>Keyboard mode</strong> after a single file read).</li>
+          <li>Empty or whitespace-only documents are skipped.</li>
+          <li>Identical text already on the buddy is not saved again.</li>
+          <li>On internal flash, oldest backups are removed automatically when space runs low.</li>
+          <li>SD card files are never deleted by factory reset or flash pruning.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. Home Wi‑Fi &amp; finding the portal</h2>
+        <ul>
+          <li>In Home network mode the buddy joins your router.</li>
+          <li>Browse to the IP shown on the OLED, or try <code>http://&lt;device-name&gt;.local</code> (mDNS), e.g. <code>http://neo2-buddy.local</code>.</li>
+          <li>If home Wi‑Fi fails, a recovery hotspot appears so you can fix settings.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Bluetooth &amp; live typing</h2>
+        <ul>
+          <li>Open <strong>Typing &amp; BLE</strong> in the portal nav (or <code>/typing.html</code>). That page monitors keyboard mode only — it does not scan files or list SmartApplets, so your Neo stays in typing emulation.</li>
+          <li>Use <strong>Pair keyboard</strong> once so a phone/PC/tablet bonds the buddy as a BLE keyboard (2-minute window for a <em>new</em> host).</li>
+          <li>Bonds are saved on the buddy. After reboot, the buddy re-advertises so the same host can reconnect without pairing again.</li>
+          <li>While connected, <strong>keys you press on the Neo are typed on the phone/PC</strong> (live passthrough). The live viewer on the Typing page shows the same text.</li>
+          <li><strong>ASM (manager) mode:</strong> Scan, backup, and file actions on the <strong>Documents</strong> page switch the Neo out of keyboard mode. While Bluetooth is connected, those actions may <strong>stop keystrokes</strong> reaching your paired device until keyboard mode returns (automatic after Backup now / Backup all).</li>
+          <li><strong>Send text</strong> (or <strong>Send BLE</strong> on a backup from the Documents page) is optional for pasting longer portal text to the same host.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>5. Cloud sync (optional)</h2>
+        <ul>
+          <li>Open <strong>Cloud sync</strong>, choose WebDAV or S3-compatible storage, save, then <strong>Test connection</strong>.</li>
+          <li>Enable <strong>Auto cloud upload after backup</strong> in Settings if you want uploads after each successful backup.</li>
+          <li>Local copies stay on the buddy; cloud upload never deletes them.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>6. Password &amp; factory reset</h2>
+        <ul>
+          <li>Change the portal password under Settings → Portal password.</li>
+          <li>Factory reset (Settings) requires re-entering the password. It clears settings and internal backups; <strong>SD card is kept</strong>.</li>
+          <li>Default password after a full flash / factory reset is <code>neo2buddy</code> until you complete setup again.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>7. Serial CLI (advanced)</h2>
+        <p>With UART enabled: <code>login PASSWORD</code>, then <code>device factory-reset PASSWORD</code>, <code>help</code>, or Neo/backup commands. See the firmware UART help.</p>
+      </section>
+    </article>
+  </main>
+</body>
+</html>

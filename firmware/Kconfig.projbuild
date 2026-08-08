@@ -1,0 +1,2 @@
+# Include top-level main Kconfig when building this component
+source "main/Kconfig"

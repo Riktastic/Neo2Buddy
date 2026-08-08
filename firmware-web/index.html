@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="application-name" content="Neo2 Buddy Portal">
+  <meta name="application-version" content="0.9.0">
+  <meta name="release-date" content="2026-08-01">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f0e8">
+  <title>Neo2 Buddy</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="css/login.css">
+  <link rel="stylesheet" href="css/portal.css">
+</head>
+<body data-page="dashboard">
+  <main class="app-shell">
+    <header class="topbar">
+      <div><p class="eyebrow" id="app-name">Neo2 Buddy Portal</p><h1 id="header-device-name">Neo2 Buddy</h1></div>
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <nav class="portal-nav" aria-label="Portal sections">
+          <a class="portal-nav-link is-active" href="index.html" aria-current="page">Documents</a>
+          <a class="portal-nav-link" href="typing.html">Typing &amp; BLE</a>
+        </nav>
+        <div class="status-chip"><span class="dot" aria-hidden="true"></span><span id="connection">Looking for device</span></div>
+          <button id="logs-button" class="icon-button" type="button" title="View logs" aria-label="View logs" hidden>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 19V6.2C4 5.0799 4 4.51984 4.21799 4.09202C4.40973 3.71569 4.71569 3.40973 5.09202 3.21799C5.51984 3 6.0799 3 7.2 3H16.8C17.9201 3 18.4802 3 18.908 3.21799C19.2843 3.40973 19.5903 3.71569 19.782 4.09202C20 4.51984 20 5.0799 20 6.2V17H6C4.89543 17 4 17.8954 4 19ZM4 19C4 20.1046 4.89543 21 6 21H20M9 7H15M9 11H15M19 17V21" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="visually-hidden">Logs</span>
+          </button>
+          <button id="settings-button" class="icon-button" type="button" data-action="settings" title="Device settings" aria-label="Device settings" hidden><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M30.015 12.97l-2.567-0.569c-0.2-0.64-0.462-1.252-0.762-1.841l1.389-2.313c0.518-0.829 0.78-2.047 0-2.829l-1.415-1.414c-0.78-0.781-2.098-0.64-2.894-0.088l-2.251 1.434c-0.584-0.303-1.195-0.563-1.829-0.768l-0.576-2.598c-0.172-0.953-1.005-1.984-2.11-1.984h-2c-1.104 0-1.781 1.047-2 2l-0.642 2.567c-0.678 0.216-1.328 0.492-1.948 0.819l-2.308-1.47c-0.795-0.552-2.114-0.692-2.894 0.088l-1.415 1.414c-0.781 0.782-0.519 2 0 2.828l1.461 2.435c-0.274 0.552-0.517 1.123-0.705 1.72l-2.566 0.569c-0.953 0.171-1.984 1.005-1.984 2.109v2c0 1.105 1.047 1.782 2 2l2.598 0.649c0.179 0.551 0.404 1.080 0.658 1.593l-1.462 2.438c-0.518 0.828-0.78 2.047 0 2.828l1.415 1.414c0.78 0.782 2.098 0.64 2.894 0.089l2.313-1.474c0.623 0.329 1.277 0.608 1.96 0.823l0.64 2.559c0.219 0.953 0.896 2 2 2h2c1.105 0 1.938-1.032 2.11-1.985l0.577-2.604c0.628-0.203 1.23-0.459 1.808-0.758l2.256 1.438c0.796 0.552 2.114 0.692 2.895-0.089l1.415-1.414c0.78-0.782 0.518-2 0-2.828l-1.39-2.317c0.279-0.549 0.521-1.12 0.716-1.714l2.599-0.649c0.953-0.219 2-0.895 2-2v-2c0-1.104-1.031-1.938-1.985-2.11zM30.001 16.939c-0.085 0.061-0.245 0.145-0.448 0.192l-3.708 0.926-0.344 1.051c-0.155 0.474-0.356 0.954-0.597 1.428l-0.502 0.986 1.959 3.267c0.125 0.2 0.183 0.379 0.201 0.485l-1.316 1.314c-0.127-0.040-0.271-0.092-0.341-0.14l-3.292-2.099-1.023 0.529c-0.493 0.256-0.999 0.468-1.503 0.631l-1.090 0.352-0.824 3.723c-0.038 0.199-0.145 0.36-0.218 0.417h-1.8c-0.061-0.085-0.145-0.245-0.191-0.448l-0.921-3.681-1.066-0.338c-0.549-0.173-1.097-0.404-1.63-0.684l-1.028-0.543-3.293 2.099c-0.135 0.091-0.279 0.143-0.409 0.143l-1.311-1.276c0.018-0.104 0.072-0.274 0.181-0.449l2.045-3.408-0.487-0.98c-0.227-0.462-0.407-0.895-0.547-1.325l-0.343-1.052-3.671-0.918c-0.231-0.052-0.398-0.139-0.485-0.2v-1.86c0.001 0.001 0.002 0.001 0.005 0.001 0.034 0 0.198-0.117 0.335-0.142l3.772-0.835 0.346-1.103c0.141-0.449 0.333-0.917 0.588-1.43l0.487-0.98-2.024-3.373c-0.125-0.201-0.184-0.38-0.201-0.485l1.315-1.314c0.128 0.041 0.271 0.093 0.34 0.14l3.354 2.138 1.027-0.542c0.527-0.278 1.073-0.507 1.622-0.682l1.063-0.338 0.912-3.649c0.053-0.231 0.138-0.398 0.2-0.485h1.859c-0.014 0.020 0.115 0.195 0.142 0.339l0.84 3.794 1.089 0.352c0.511 0.165 1.023 0.38 1.523 0.639l1.023 0.532 3.224-2.053c0.135-0.092 0.279-0.143 0.409-0.143l1.313 1.276c-0.017 0.104-0.072 0.276-0.181 0.45l-1.98 3.296 0.505 0.988c0.273 0.533 0.48 1.033 0.635 1.529l0.346 1.104 3.697 0.82c0.224 0.041 0.398 0.171 0.434 0.241zM16.013 9.99c-3.321 0-6.023 2.697-6.023 6.010s2.702 6.010 6.023 6.010 6.023-2.697 6.023-6.009c0-3.313-2.702-6.010-6.023-6.010zM16 20c-2.205 0-4-1.794-4-4s1.794-4 4-4c2.206 0 4 1.794 4 4s-1.794 4-4 4z"></path>
+</svg></button>
+        <button id="login-btn" class="button" type="button">Sign In</button>
+      </div>
+    </header>
+
+    <section class="hero" aria-labelledby="overview-heading">
+      <div><p class="eyebrow">DEVICE OVERVIEW</p><h2 id="overview-heading">Your writing companion,<br><em>ready when you are.</em></h2></div>
+      <a class="primary-action" href="typing.html">
+        <span class="btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M6 16h12"/>
+          </svg>
+        </span>
+        Live typing &amp; Bluetooth <span aria-hidden="true">→</span>
+      </a>
+    </section>
+
+    <section class="stat-grid" aria-label="AlphaSmart NEO status">
+      <article class="stat-card neo-card"><span class="label">NEO connection</span><strong id="neo-connection">Looking</strong><small id="neo-connection-detail">Connect the NEO with USB</small><div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap"><button class="button" id="neo-rescan" type="button">Connect Neo</button><button class="button" id="neo-restart" type="button" hidden title="Return Neo to keyboard mode">Keyboard mode</button></div></article>
+      <article class="stat-card neo-card"><span class="label">Model</span><strong id="neo-model">--</strong><small id="neo-model-detail">Reported by the NEO when connected</small></article>
+      <article class="stat-card neo-card"><span class="label">SmartApplets</span><strong id="applet-count">--</strong><small id="applet-count-detail">Use Refresh in SmartApplets to update (manager mode)</small></article>
+      <article class="stat-card neo-card"><span class="label">Local backups</span><strong id="backup-count">--</strong><small id="backup-count-detail">Saved on SD or internal storage</small></article>
+    </section>
+
+    <div id="portal-notices" class="portal-notices" hidden aria-live="polite"></div>
+
+    <section class="workspace dashboard-workspace">
+      <aside class="panel quick-panel">
+        <p class="eyebrow">QUICK ACTIONS</p><h2>Take control</h2>
+        <div class="action-list">
+          <a class="action-row action-link" href="typing.html">
+            <span class="action-icon blue" aria-hidden="true">⌨</span>
+            <span><b>Live typing &amp; Bluetooth</b><small>Monitor keyboard input and pair a BLE host — stays in keyboard mode</small></span><i>›</i>
+          </a>
+          <button class="action-row" type="button" data-action="wifi">
+            <span class="action-icon green" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" focusable="false" aria-hidden="true">
+                <path d="M1.33309 8.07433C0.92156 8.44266 0.886539 9.07485 1.25487 9.48638C1.62319 9.89791 2.25539 9.93293 2.66691 9.5646L1.33309 8.07433ZM21.3331 9.5646C21.7446 9.93293 22.3768 9.89791 22.7451 9.48638C23.1135 9.07485 23.0784 8.44266 22.6669 8.07433L21.3331 9.5646ZM12 19C11.4477 19 11 19.4477 11 20C11 20.5523 11.4477 21 12 21V19ZM12.01 21C12.5623 21 13.01 20.5523 13.01 20C13.01 19.4477 12.5623 19 12.01 19V21ZM14.6905 17.04C15.099 17.4116 15.7315 17.3817 16.1031 16.9732C16.4748 16.5646 16.4448 15.9322 16.0363 15.5605L14.6905 17.04ZM18.0539 13.3403C18.4624 13.7119 19.0949 13.682 19.4665 13.2734C19.8381 12.8649 19.8082 12.2324 19.3997 11.8608L18.0539 13.3403ZM7.96372 15.5605C7.55517 15.9322 7.52524 16.5646 7.89687 16.9732C8.2685 17.3817 8.90095 17.4116 9.3095 17.04L7.96372 15.5605ZM4.60034 11.8608C4.19179 12.2324 4.16185 12.8649 4.53348 13.2734C4.90511 13.682 5.53756 13.7119 5.94611 13.3403L4.60034 11.8608ZM2.66691 9.5646C5.14444 7.34716 8.41371 6 12 6V4C7.90275 4 4.16312 5.54138 1.33309 8.07433L2.66691 9.5646ZM12 6C15.5863 6 18.8556 7.34716 21.3331 9.5646L22.6669 8.07433C19.8369 5.54138 16.0972 4 12 4V6ZM12 21H12.01V19H12V21ZM12 16C13.0367 16 13.9793 16.3931 14.6905 17.04L16.0363 15.5605C14.9713 14.5918 13.5536 14 12 14V16ZM12 11C14.3319 11 16.4546 11.8855 18.0539 13.3403L19.3997 11.8608C17.4466 10.0842 14.8487 9 12 9V11ZM9.3095 17.04C10.0207 16.3931 10.9633 16 12 16V14C10.4464 14 9.02872 14.5918 7.96372 15.5605L9.3095 17.04ZM5.94611 13.3403C7.54544 11.8855 9.66815 11 12 11V9C9.15127 9 6.55344 10.0842 4.60034 11.8608L5.94611 13.3403Z" />
+              </svg>
+            </span>
+            <span><b>Wi-Fi setup</b><small>Connect or change network</small></span><i>›</i>
+          </button>
+          <button class="action-row" type="button" id="open-sync" hidden><span class="action-icon amber">&#8645;</span><span><b>Cloud sync</b><small id="open-sync-subtitle">WebDAV or S3 backup destination</small></span><i>›</i></button>
+        </div>
+      </aside>
+    </section>
+      <!-- Move 'Documents on this NEO' next to the quick actions panel -->
+      <section class="neo-documents-section">
+        <article class="panel neo-documents-panel" aria-labelledby="neo-documents-heading">
+          <div class="panel-heading">
+            <div><p class="eyebrow">ON THIS NEO</p><h2 id="neo-documents-heading">Documents on this NEO</h2></div>
+            <div class="panel-actions" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+              <label class="inline-toggle" id="dashboard-auto-backup-wrap" hidden title="When enabled, changed files are backed up automatically when Neo connects (brief ASM mode)">
+                <input id="dashboard-auto-backup" type="checkbox" aria-describedby="neo-documents-guidance">
+                <span class="toggle-track" aria-hidden="true"></span>
+                <span class="inline-toggle-text">Auto on connect</span>
+              </label>
+              <label class="visually-hidden" for="neo-charmap">Character map</label>
+              <select id="neo-charmap" class="button" title="Text export/import character map" hidden>
+                <option value="en-us">English (US)</option>
+                <option value="ua-pc">Ukrainian PC</option>
+                <option value="ua-mac">Ukrainian Mac</option>
+              </select>
+              <button class="button" id="neo-backup-now" type="button" hidden title="Interrupts keyboard mode: backup changed files, then return Neo to keyboard mode">Backup now</button>
+              <button class="button" id="neo-read-all" type="button" hidden title="Interrupts keyboard mode: backup every non-empty file, then return Neo to keyboard mode">Backup all</button>
+              <button class="button primary" id="refresh-neo-files" type="button" hidden title="Interrupts keyboard mode while scanning">Scan NEO</button>
+            </div>
+          </div>
+          <p class="file-size-guidance" id="neo-documents-guidance">Scan, read, write, and backup switch Neo to ASM (manager) mode only when you click them — not in the background. Use <strong>Auto on connect</strong> to save changed files when Neo plugs in. If Bluetooth is connected, keystrokes to your paired device may stop until keyboard mode returns. Backup now / Backup all return to keyboard mode when finished.</p>
+          <div class="empty-state" id="neo-files-empty"><h3>NEO files will appear here</h3><p>Connect the NEO by USB, then scan it to inspect documents across all installed SmartApplets.</p></div>
+          <div class="neo-file-table-wrap" id="neo-file-table-wrap" hidden>
+            <table class="neo-file-table">
+              <thead><tr><th scope="col">Document</th><th scope="col">SmartApplet</th><th scope="col">Space</th><th scope="col">Allocated</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+              <tbody id="neo-file-list"></tbody>
+            </table>
+          </div>
+          <p class="operation-notice" id="neo-file-notice" role="status" aria-live="polite" hidden></p>
+        </article>
+      </section>
+
+    <section class="workspace management-workspace">
+      <article class="panel files-panel">
+        <div class="panel-heading"><div><p class="eyebrow">SMARTAPPLETS</p><h2>Installed applets</h2></div><div class="panel-actions"><button class="button danger-action" id="remove-all-applets" type="button" hidden>Remove all</button><button class="button" id="install-applet" type="button" hidden>Install</button><button class="button primary" id="refresh-applets" type="button" hidden>Refresh</button></div></div>
+        <p class="file-size-guidance">Install a validated `.os3kapp` package, download a copy of an installed applet, or remove one from the connected NEO. Use <strong>Refresh</strong> to load the list (switches Neo to manager mode briefly). The dashboard no longer polls applets automatically.</p>
+        <div class="empty-state" id="applets-empty"><h3>Connect your NEO</h3><p>Installed applets will appear here after the NEO USB connection is active.</p></div>
+        <div class="file-list" id="applet-list" hidden></div>
+      </article>
+
+      
+    </section>
+
+    <!-- Saved documents moved into its own top-level section -->
+    <section class="saved-documents-section">
+      <article class="panel files-panel">
+        <div class="panel-heading"><div><p class="eyebrow">BACKUPS</p><h2>Saved documents</h2></div><div class="panel-actions"><label class="inline-toggle" id="backups-auto-backup-wrap" hidden title="When enabled, changed files are backed up automatically when Neo connects"><input id="backups-auto-backup" type="checkbox" aria-describedby="neo-documents-guidance"><span class="toggle-track" aria-hidden="true"></span><span class="inline-toggle-text">Auto on connect</span></label><input id="upload-file-input" type="file" accept=".txt,text/plain" hidden><button class="button" id="upload-file" type="button" hidden>Upload</button><button class="button" id="sync-run-backups" type="button" hidden title="Upload all local backups to your cloud destination">Cloud upload</button><button class="button primary" id="refresh-files" type="button" hidden>Refresh</button></div></div>
+        <p class="file-size-guidance">Files are saved as <code>NeoLabel_s01_FileName_YYYYMMDD.txt</code> (Neo label, or device name if blank). Large documents are flagged before you send them back to the NEO.</p>
+        <div class="empty-state" id="files-empty"><h3>No saved documents</h3><p>Read a file from the NEO to create a local backup on SD or internal storage.</p></div>
+        <div class="file-list" id="file-list" hidden></div>
+      </article>
+    </section>    
+    
+  </main>
+
+  <dialog id="applet-dialog" class="applet-dialog">
+    <form id="applet-form">
+      <div class="dialog-heading settings-heading"><div><p class="eyebrow" id="applet-dialog-label">SMARTAPPLET</p><h2 id="applet-dialog-title">Install SmartApplet</h2></div><button class="close-dialog" id="applet-close" type="button" aria-label="Close SmartApplet dialog">&times;</button></div>
+      <div id="applet-install-fields"><label class="applet-upload">SmartApplet package<input id="applet-file" type="file" accept=".os3kapp,.app,.bin" required><span id="applet-file-name">Choose a package file</span></label><label class="checkbox-row"><input id="applet-replace" type="checkbox"><span>Replace an installed applet with the same ID</span></label></div>
+      <p id="applet-dialog-copy" class="settings-note">The connected NEO validates the applet package before installation.</p>
+      <p id="applet-dialog-status" class="dialog-status" aria-live="polite"></p>
+      <div class="dialog-actions"><button class="button" id="applet-cancel" type="button">Cancel</button><button class="button primary" id="applet-submit" type="submit">Install applet</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="format-sd-dialog" class="format-dialog">
+    <form id="format-sd-form">
+      <div class="dialog-heading settings-heading">
+        <div><p class="eyebrow">STORAGE</p><h2>Format SD card</h2></div>
+        <button class="close-dialog" id="format-sd-cancel" type="button" aria-label="Cancel">&times;</button>
+      </div>
+      <p class="settings-note">Formatting will erase all data on the SD card. This operation cannot be undone.</p>
+      <p id="sd-capacity-line" class="settings-note" style="display:none;">Detected card: <strong id="sd-capacity-text">—</strong></p>
+      <div id="sd-progress-wrap" style="display:none;margin:8px 0;align-items:center;gap:8px;">
+        <progress id="sd-progress" value="0" max="100" style="width:100%"></progress>
+        <div id="sd-progress-label" style="min-width:56px;text-align:right;color:var(--ink-muted);">0%</div>
+      </div>
+      <label>To confirm, type <strong>FORMAT</strong> in the box below and click <em>Format SD</em>:</label>
+      <input id="format-confirm-input" type="text" autocomplete="off" placeholder="Type FORMAT to confirm">
+      <div class="dialog-actions">
+        <button class="button" type="button" id="format-sd-cancel-2">Cancel</button>
+        <button class="button danger-action" type="submit" id="format-sd-confirm" disabled>Format SD</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="factory-reset-dialog" class="format-dialog">
+    <form id="factory-reset-form">
+      <div class="dialog-heading settings-heading">
+        <div><p class="eyebrow">DANGER ZONE</p><h2>Factory reset</h2></div>
+        <button class="close-dialog" id="factory-reset-cancel" type="button" aria-label="Cancel">&times;</button>
+      </div>
+      <p class="settings-note">This restores firmware defaults on the buddy. It erases saved Wi‑Fi, cloud sync, portal password, and internal backup files. Files on the SD card are <strong>not</strong> deleted.</p>
+      <label>Re-enter portal password to confirm<input id="factory-reset-password" type="password" autocomplete="current-password" required></label>
+      <div class="dialog-actions">
+        <button class="button" type="button" id="factory-reset-cancel-2">Cancel</button>
+        <button class="button danger-action" type="submit" id="factory-reset-confirm">Reset device</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="write-document-dialog" class="document-dialog">
+    <form id="write-document-form">
+      <div class="dialog-heading settings-heading"><div><p class="eyebrow">WRITE TO NEO</p><h2 id="write-document-title">Replace document text</h2></div><button class="close-dialog" id="write-document-close" type="button" aria-label="Close write dialog">&times;</button></div>
+      <p class="document-meta" id="write-document-meta"></p>
+      <label>Document text<textarea id="write-document-content" rows="12" style="width:100%;font-family:monospace"></textarea></label>
+      <p id="write-document-status" class="dialog-status" aria-live="polite"></p>
+      <div class="dialog-actions"><button class="button" id="write-document-cancel" type="button">Cancel</button><button class="button primary" type="submit">Write to NEO</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="document-dialog" class="document-dialog">
+    <div class="dialog-heading settings-heading"><div><p class="eyebrow">NEO DOCUMENT</p><h2 id="document-dialog-title">Document preview</h2></div><button class="close-dialog" id="document-close" type="button" aria-label="Close document preview">&times;</button></div>
+    <p class="document-meta" id="document-dialog-meta"></p>
+    <pre class="document-preview" id="document-dialog-content" aria-live="polite">Reading document...</pre>
+    <div class="dialog-actions"><button class="button" id="document-download" type="button">Download</button><button class="button primary" id="document-save" type="button">Save backup</button></div>
+  </dialog>
+
+  <dialog id="setup-dialog" class="setup-dialog">
+    <form id="setup-form">
+      <div class="setup-heading"><p class="eyebrow">FIRST-TIME SETUP</p><h2>Make this NEO yours.</h2><p>Give the device a name and choose how its backups should be protected.</p></div>
+      <div class="setup-steps" aria-hidden="true"><span class="active">1</span><span>2</span><span>3</span></div>
+      <label>Device name<input id="setup-device-name" name="device-name" maxlength="32" value="Neo2 Buddy"></label>
+      <label class="checkbox-row"><input id="setup-cloud-enabled" type="checkbox"> <span>Configure cloud backup now</span></label>
+      <p class="setup-note">Local storage remains the source of truth. Cloud backups are optional and never remove local copies.</p>
+      <div class="dialog-actions"><button class="button" type="button" id="setup-later">Set up later</button><button class="button primary" type="submit">Continue</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="sync-dialog" class="sync-dialog">
+    <form id="sync-form">
+      <div class="dialog-heading"><p class="eyebrow">CLOUD BACKUP</p><h2>Backup destination</h2><p>Upload local backups to WebDAV (Nextcloud) or S3-compatible storage. Settings are saved on the device and survive reboots.</p></div>
+      <p id="sync-health" class="sync-health" role="status" aria-live="polite">Checking cloud backup status…</p>
+      <fieldset class="provider-switch"><legend>Provider</legend><label><input type="radio" name="provider" value="webdav" checked><span>WebDAV</span></label><label><input type="radio" name="provider" value="s3"><span>S3-compatible</span></label></fieldset>
+      <div id="sync-provider-help" class="sync-provider-help" aria-live="polite"></div>
+      <label class="toggle-row"><span><b>Enable cloud upload</b><small>Upload local backups when you run sync (local copies are kept).</small></span><input name="enabled" type="checkbox" id="sync-enabled"><span class="toggle-track" aria-hidden="true"></span></label>
+      <label>Server URL<input name="endpoint" type="url" placeholder="https://cloud.example.com/remote.php/dav/files/you/backups" autocomplete="url" required></label>
+      <label id="bucket-field" hidden>Bucket<input name="bucket" placeholder="neo-backups"></label>
+      <label id="region-field" hidden>Region<input name="region" placeholder="us-east-1 or auto for R2"></label>
+      <label>Folder<input name="path" placeholder="alpha-smart/neo2"><small>Optional subfolder for uploaded backups.</small></label>
+      <label>Username or access key<input name="username" autocomplete="username" required></label>
+      <label>App password or secret key<input name="secret" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved secret"></label>
+      <ul id="sync-checklist" class="sync-checklist">
+        <li data-check="wifi">Buddy connected to home Wi‑Fi with internet</li>
+        <li data-check="clock">Device clock synced (required for S3)</li>
+        <li data-check="saved">Destination saved on device</li>
+        <li data-check="test">Connection test passed</li>
+      </ul>
+      <p id="sync-state" class="setup-note">Credentials are stored on the device only. Secrets are never shown again after save.</p>
+      <div class="dialog-actions">
+        <button class="button" type="button" id="sync-cancel">Cancel</button>
+        <button class="button" type="button" id="sync-test">Test connection</button>
+        <button class="button" type="button" id="sync-run-now">Upload now</button>
+        <button class="button primary" type="submit">Save destination</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="settings-dialog">
+    <form id="settings-form">
+      <div class="dialog-heading settings-heading"><div><p class="eyebrow">DEVICE SETTINGS</p><h2>Make it feel like yours.</h2></div><button class="close-dialog" id="settings-close" type="button" aria-label="Close device settings">&times;</button></div>
+      <div class="settings-summary"><span class="settings-mark" aria-hidden="true">N</span><div><strong id="settings-device-title">Neo2 Buddy</strong><small>ESP32-S3 companion</small></div><span class="settings-status">Local only</span></div>
+      <section class="settings-section" aria-labelledby="device-preferences-heading">
+        <h3 id="device-preferences-heading">Device preferences</h3>
+        <label>Device name<input id="settings-device-name" name="device-name" maxlength="32" value="Neo2 Buddy"></label>
+        <label>Neo label<small>Used in backup filenames. Leave blank to use the device name.</small><input id="settings-neo-label" name="neo-label" maxlength="32" placeholder="e.g. RiksNeo"></label>
+        <label>Keyboard layout<select id="settings-keyboard-layout" name="keyboard-layout"><option value="u">User (u)</option><option value="us">US</option><option value="nl">Dutch (nl)</option></select></label>
+        <label>Keyboard sleep<select id="settings-sleep" name="sleep"><option value="5">After 5 minutes</option><option value="10" selected>After 10 minutes</option><option value="30">After 30 minutes</option><option value="never">Never</option></select></label>
+      </section>
+      <section class="settings-section" aria-labelledby="storage-preferences-heading">
+        <h3 id="storage-preferences-heading">Storage and privacy</h3>
+        <label class="toggle-row"><span><b>Keep live typing private</b><small>Clear the monitor when this portal closes.</small></span><input id="settings-private-live" type="checkbox" checked><span class="toggle-track" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span><b>Prefer SD card backups</b><small>Use internal storage only when no card is present.</small></span><input id="settings-prefer-sd" type="checkbox" checked><span class="toggle-track" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span><b>Auto-backup on connect</b><small>When Neo plugs in, briefly leave keyboard mode to backup changed files, then return to keyboard mode. Live typing is interrupted during the backup.</small></span><input id="settings-auto-backup" type="checkbox"><span class="toggle-track" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span><b>Auto cloud upload after backup</b><small>When cloud sync is configured, upload new local backups automatically after a successful backup.</small></span><input id="settings-auto-cloud" type="checkbox"><span class="toggle-track" aria-hidden="true"></span></label>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:10px;">
+          <button id="format-sd" class="button small subtle" type="button" title="Format SD card (destructive)">Format SD...</button>
+          <small style="color:var(--ink-muted);">Erase and reformat the SD card. This action is destructive and requires confirmation.</small>
+        </div>
+        <label class="toggle-row" style="margin-top:6px;"><span><b>Require sign-in to view portal</b><small>When enabled, users must authenticate before accessing the admin portal.</small></span><input id="settings-require-auth" type="checkbox"><span class="toggle-track" aria-hidden="true"></span></label>
+        <div class="settings-section-block" style="margin-top:12px;display:grid;gap:8px;">
+          <h4 style="margin:0;">Portal password</h4>
+          <label>Current password<input id="settings-password-current" type="password" autocomplete="current-password" placeholder="Current portal password"></label>
+          <label>New password<input id="settings-password-new" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></label>
+          <label>Confirm new password<input id="settings-password-confirm" type="password" autocomplete="new-password" minlength="8"></label>
+          <button id="settings-password-save" class="button small" type="button">Change password</button>
+        </div>
+        <div class="settings-danger-zone">
+          <h4>Factory reset</h4>
+          <p class="settings-note">Erase buddy settings and internal backups. SD card files are kept.</p>
+          <button id="factory-reset-open" class="button small danger-action" type="button">Factory reset…</button>
+        </div>
+      </section>
+
+      <section class="settings-section" id="wifi-section" aria-labelledby="wifi-preferences-heading">
+        <h3 id="wifi-preferences-heading">Network</h3>
+        <p id="network-mode-status" class="field-hint" style="margin-top:0"></p>
+        <div class="network-mode-grid settings-mode-grid" role="radiogroup" aria-label="Network mode">
+          <label class="network-mode-card">
+            <input type="radio" name="settings-network-mode" value="direct" checked>
+            <span class="network-mode-title">Direct access</span>
+            <span class="network-mode-copy">Manage the buddy over its own Wi‑Fi hotspot.</span>
+          </label>
+          <label class="network-mode-card">
+            <input type="radio" name="settings-network-mode" value="home">
+            <span class="network-mode-title">Home network</span>
+            <span class="network-mode-copy">Join your router and open the portal from your LAN.</span>
+          </label>
+        </div>
+
+        <div id="settings-direct-fields">
+          <label>Hotspot name<input id="hotspot-ssid" maxlength="32" autocomplete="off"></label>
+          <label>Hotspot password<input id="hotspot-password" type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank to keep current"></label>
+        </div>
+
+        <div id="settings-home-fields" hidden>
+          <div class="wifi-row settings-wifi-row">
+            <label>Available networks
+              <select id="wifi-ssid"><option value="">(scan to list)</option></select>
+            </label>
+            <button type="button" class="button" id="wifi-scan-btn" title="Scan again">Scan</button>
+          </div>
+          <label>Home Wi‑Fi password<input id="wifi-password" type="password" autocomplete="new-password" placeholder="Leave blank to keep current"></label>
+          <label class="toggle-row"><span><b>Use DHCP</b><small>When enabled the device obtains IP settings automatically.</small></span><input id="wifi-dhcp" type="checkbox" checked><span class="toggle-track" aria-hidden="true"></span></label>
+          <div id="static-ip-fields" hidden>
+            <label>IP address<input id="wifi-ip" placeholder="192.168.1.50"></label>
+            <label>Netmask<input id="wifi-netmask" placeholder="255.255.255.0"></label>
+            <label>Gateway<input id="wifi-gateway" placeholder="192.168.1.1"></label>
+            <label>DNS<input id="wifi-dns" placeholder="8.8.8.8"></label>
+          </div>
+          <p class="field-hint network-switch-hint">Switching modes restarts the buddy. Your saved home Wi‑Fi details are kept so you can switch back later.</p>
+        </div>
+      </section>
+      <p class="settings-note" id="settings-note">These preferences are saved in this portal preview. Firmware settings will be applied when the device settings API is available.</p>
+      <div class="dialog-actions"><button class="button" type="button" id="settings-reset">Reset preview</button><button class="button primary" type="submit">Save preferences</button></div>
+    </form>
+  </dialog>
+
+    
+
+    <dialog id="logs-dialog" class="logs-dialog">
+      <div class="dialog-heading settings-heading">
+        <div><p class="eyebrow">SYSTEM</p><h2>Logs</h2></div>
+        <button class="close-dialog" id="logs-close" type="button" aria-label="Close logs dialog">&times;</button>
+      </div>
+      <div class="dialog-controls" style="display:flex;gap:8px;align-items:center;margin:8px 0;">
+        <div id="logs-filter-group" style="display:flex;gap:6px;align-items:center;">
+          <button class="button small" data-log-filter="ALL">All</button>
+          <button class="button small" data-log-filter="DEBUG">Debug</button>
+          <button class="button small" data-log-filter="INFO">Info</button>
+          <button class="button small" data-log-filter="WARN">Warn</button>
+          <button class="button small" data-log-filter="ERROR">Error</button>
+        </div>
+        <label style="margin-left:8px">Per page
+          <select id="logs-limit-select"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option></select>
+        </label>
+        <label style="margin-left:8px">Sort
+          <select id="logs-sort-select"><option value="newest" selected>Newest</option><option value="oldest">Oldest</option></select>
+        </label>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+          <button class="button" id="logs-prev" type="button">Prev</button>
+          <button class="button" id="logs-next" type="button">Next</button>
+        </div>
+      </div>
+      <div class="logs-list" id="logs-list"><p class="empty-state">No logs yet</p></div>
+    </dialog>
+
+  <dialog id="action-dialog"><form method="dialog" id="action-dialog-form"><button class="close" type="button" id="action-dialog-close" aria-label="Close">×</button><p class="eyebrow" id="dialog-label">ACTION</p><h2 id="dialog-title">Not connected</h2><p id="dialog-copy">This interactive preview will connect to the device API when firmware endpoints are ready.</p><div id="dialog-actions-default"><button class="button primary" type="submit">Done</button></div><div id="dialog-actions-pairing" hidden><p id="ble-status-line" class="settings-note">Checking Bluetooth status...</p><button class="button primary" type="button" id="ble-start-pairing">Start pairing (2 min)</button><button class="button" type="button" id="ble-stop-pairing">Stop pairing</button></div><div id="dialog-actions-ble-send" hidden><label>Text to send as keystrokes<textarea id="ble-send-text" rows="5" placeholder="Paste or type the text to send..."></textarea></label><pre id="ble-preview-box" class="document-preview" hidden></pre><p id="ble-send-status" class="dialog-status" aria-live="polite"></p><button class="button" type="button" id="ble-preview-btn">Preview</button><button class="button primary" type="button" id="ble-confirm-send">Send keystrokes</button><button class="button" type="button" id="ble-cancel-send">Cancel</button></div></form></dialog>
+
+  <dialog id="file-action-dialog" class="document-dialog">
+    <div class="dialog-heading settings-heading"><div><p class="eyebrow">LOCAL FILE</p><h2 id="file-action-title">Document</h2></div><button class="close-dialog" id="file-action-close" type="button" aria-label="Close">&times;</button></div>
+    <pre class="document-preview" id="file-action-preview"></pre>
+    <label>Rename to<input id="file-rename-input" maxlength="48"></label>
+    <div class="dialog-actions"><button class="button" type="button" id="file-download-btn">Download</button><button class="button" type="button" id="file-rename-btn">Rename</button><button class="button danger-action" type="button" id="file-delete-btn">Delete</button></div>
+  </dialog>
+  <dialog id="login-dialog" class="login-dialog">
+    <form id="login-form">
+      <div class="login-intro"><span class="login-mark" aria-hidden="true">N</span><p class="eyebrow">LOCAL DEVICE ACCESS</p><h2>Welcome back.</h2><p>Sign in to manage backups, connected hardware, and keyboard monitoring on this Neo2 Buddy.</p></div>
+      <label class="login-field">Portal password<input id="login-password" type="password" autocomplete="current-password" required placeholder="Enter your password"></label>
+      <p class="login-error" id="login-error" role="alert" hidden></p>
+      <button id="login-submit" class="button primary login-submit">Sign in securely <span aria-hidden="true">&rarr;</span></button>
+      <div class="login-footer"><span>Only this device can verify your password.</span><button type="button" id="login-cancel" class="text-button">Cancel</button></div>
+    </form>
+  </dialog>
+  <input id="file-input" type="file" accept="text/plain,.txt,.md" hidden>
+  <script src="js/demo.js"></script>
+  <script src="js/app.js"></script>
+  <footer class="portal-footer" aria-hidden="false">
+    <div class="portal-footer-inner">
+      <div class="footer-left"><span id="footer-app-name">Neo2 Buddy Portal</span> <span id="footer-version">v0.9.0-beta</span> <span id="footer-release">(2026-08-01)</span> <span class="footer-beta-note" title="Tested on Dutch Neo2 only; other layouts may differ">Beta · WIP</span></div>
+      <div class="footer-right">
+        <a href="https://riktastic.github.io/Neo2Buddy/" target="_blank" rel="noopener noreferrer">Live demo</a>
+        <a href="typing.html">Typing &amp; BLE</a>
+        <a href="/user-guide.html">User guide</a>
+        <a href="https://github.com/Riktastic" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/Riktastic/Neo2Buddy" target="_blank" rel="noopener noreferrer">Source</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
