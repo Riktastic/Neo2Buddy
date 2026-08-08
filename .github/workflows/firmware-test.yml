@@ -18,12 +18,18 @@ jobs:
     container: espressif/idf:release-v5.3
     defaults:
       run:
+        shell: bash
         working-directory: firmware
     steps:
       - uses: actions/checkout@v4
 
       - name: Build production firmware
-        run: idf.py build
+        run: |
+          source "$IDF_PATH/export.sh"
+          idf.py build
 
       - name: Build Unity test firmware
-        run: idf.py -C test set-target esp32s3 && idf.py -C test build
+        run: |
+          source "$IDF_PATH/export.sh"
+          idf.py -C test set-target esp32s3
+          idf.py -C test build
