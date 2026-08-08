@@ -274,9 +274,9 @@
 
     if (p === '/logs') {
       return jsonResponse([
-        { ts_ms: Date.now(), level: 'INFO', message: 'Demo mode — sample portal data only.' },
-        { ts_ms: Date.now() - 5000, level: 'INFO', message: 'Neo keyboard listener started (PID 0xBD04)' },
-        { ts_ms: Date.now() - 12000, level: 'INFO', message: 'Home network connected. IP=192.168.8.244' },
+        { ts_ms: Date.now(), level: 'INFO', msg: 'Demo mode — sample portal data only.' },
+        { ts_ms: Date.now() - 5000, level: 'INFO', msg: 'Neo keyboard listener started (PID 0xBD04)' },
+        { ts_ms: Date.now() - 12000, level: 'INFO', msg: 'Home network connected. IP=192.168.8.244' },
       ]);
     }
 

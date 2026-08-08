@@ -340,6 +340,11 @@ a.primary-action:hover, a.primary-action:focus-visible { background: #c95538; co
 .monitor-note { color: var(--ink-muted); }
 dialog { max-width: min(560px, calc(100% - 30px)); border-radius: 5px; border: 1px solid var(--ink); background: var(--panel); color: var(--ink); box-shadow: 8px 8px 0 var(--blue-deep); }
 dialog::backdrop { background: #172331a6; }
+dialog:modal {
+  margin: auto;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
 /* Format dialog specific tweaks */
 .format-dialog { width: min(600px, calc(100% - 28px)); padding: 16px; }
 .format-dialog .settings-note { margin-bottom: 8px; }
@@ -406,9 +411,16 @@ dialog::backdrop { background: #172331a6; }
   width: min(720px, calc(100% - 30px));
   max-height: calc(100vh - 40px);
   padding: 18px;
+}
+.logs-dialog:not([open]) {
+  display: none;
+}
+.logs-dialog[open],
+.logs-dialog:modal {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  margin: auto;
 }
 .logs-toolbar {
   display: flex;

@@ -167,8 +167,11 @@ document.querySelectorAll('#logs-filter-group button').forEach(btn => {
   });
 });
 
-logsButton?.addEventListener('click', () => { logsDialog.showModal(); logsPage = 0; fetchLogs(0); });
-logsClose?.addEventListener('click', () => logsDialog.close());
+logsButton?.addEventListener('click', () => { if (!logsDialog?.showModal) return; logsDialog.showModal(); logsPage = 0; fetchLogs(0); });
+logsClose?.addEventListener('click', () => logsDialog?.close());
+logsDialog?.addEventListener('click', (event) => {
+  if (event.target === logsDialog) logsDialog.close();
+});
 
 
 async function apiRequest(path, options = {}) {
