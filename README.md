@@ -1,10 +1,12 @@
 # AlphaSmart Neo2 Buddy
 
+The **AlphaSmart Neo2** is a portable word processor from the mid-2000s: a full-size keyboard, a small grey LCD, and AA batteries. It is deliberately **distraction-free** — no Wi‑Fi, no browser, no notifications, nothing on the screen except your text. Drafts live in the built-in **AlphaWord** app (up to eight files at a time). It was aimed at classrooms and became a cult machine for writers who want a device that does one job: let you write.
+
 You bought a Neo2 because the blank page on a laptop is a trap. No tabs. No notifications. Just keys, a small screen, and whatever story is stubborn enough to show up.
 
 The catch is the ending of the writing day: getting those files *off* the machine without turning the ritual into IT support. That’s what this project is for.
 
-**Neo2 Buddy** is a little ESP32-S3 sidekick that sits next to your Neo. Plug in, and it can:
+**Neo2 Buddy** is a little ESP32-S3 sidekick for your Neo. Just plug it in when you want to back up, write over Bluetooth, or change its settings — the rest of the time the Neo works exactly as it always has. When connected, it can:
 
 - back up your AlphaWord files over USB  
 - show live typing in a browser on your phone or laptop  
@@ -12,7 +14,7 @@ The catch is the ending of the writing day: getting those files *off* the machin
 - ship copies to the cloud (**WebDAV** or **S3**-compatible storage) when you want a second home for drafts  
 - let another computer fetch backups automatically with a small **Python** tool  
 
-Think of it as a quiet stagehand: the Neo stays the star; the Buddy handles the props.
+Think of it as a quiet stagehand: the Neo stays the star; the Buddy handles the props. We are not trying to turn the Neo into a smart device — backup, sync, and live view run on your phone or laptop in the background, so **distraction-free writing stays non-negotiable**.
 
 ![Bench setup: AlphaSmart Neo2, ESP32-S3 buddy, and power bank](docs/assets/full-setup-powerbank.jpg)
 

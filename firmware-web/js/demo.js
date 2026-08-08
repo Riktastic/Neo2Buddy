@@ -45,6 +45,31 @@
     'slipped quickly through the glass doors of Victory Mansions, though not quickly enough ' +
     'to prevent a swirl of gritty dust from entering along with him.';
 
+  function demoNeoFileText(fileIndex) {
+    const file = DEMO_NEO_FILES.find((f) => f.file_index === fileIndex);
+    if (!file || !(file.used_size || file.size)) {
+      return '';
+    }
+    if (fileIndex === 1) {
+      return DEMO_SAMPLE_DOC;
+    }
+    return (
+      `${file.name}\n\n` +
+      'Sample Neo document for the portal showcase.\n\n' +
+      'On a real buddy, this would be UTF-8 text read from the AlphaWord file on your Neo2.'
+    );
+  }
+
+  function demoNeoBackupPath(fileIndex) {
+    const file = DEMO_NEO_FILES.find((f) => f.file_index === fileIndex);
+    const safeName = (file?.name || `file_${fileIndex}`).replace(/\s+/g, '_');
+    return `/sdcard/neo/RiksNeo_s${String(fileIndex).padStart(2, '0')}_${safeName}_20260808.txt`;
+  }
+
+  function textResponse(body) {
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
+
   let demoLiveText = '';
   let demoLiveSeq = 0;
   let demoLiveTick = 0;
@@ -62,7 +87,10 @@
   }
 
   function routeDemoApi(path, method, init) {
-    const p = path.replace(API_BASE, '').split('?')[0];
+    const raw = path.replace(API_BASE, '');
+    const qmark = raw.indexOf('?');
+    const p = qmark >= 0 ? raw.slice(0, qmark) : raw;
+    const query = qmark >= 0 ? raw.slice(qmark + 1) : '';
     const m = (method || 'GET').toUpperCase();
 
     if (p === '/login' && m === 'POST') {
@@ -101,6 +129,37 @@
       return jsonResponse(DEMO_NEO_FILES.filter((f) => (f.used_size || f.size || 0) > 0));
     }
 
+    const neoFileTransfer = p.match(/^\/neo\/applets\/(\d+)\/files\/(\d+)\/(download|read)$/);
+    if (neoFileTransfer) {
+      const fileIndex = parseInt(neoFileTransfer[2], 10);
+      const action = neoFileTransfer[3];
+      const text = demoNeoFileText(fileIndex);
+      if (action === 'download' && m === 'GET') {
+        return textResponse(text);
+      }
+      if (action === 'read' && m === 'POST') {
+        if (query.includes('backup=1')) {
+          return jsonResponse({ saved: true, path: demoNeoBackupPath(fileIndex) });
+        }
+        return textResponse(text);
+      }
+    }
+
+    if (/^\/neo\/applets\/\d+\/files\/read-all$/.test(p) && m === 'POST') {
+      const count = DEMO_NEO_FILES.filter((f) => (f.used_size || f.size || 0) > 0).length;
+      return jsonResponse({ count, returned_to_keyboard: true });
+    }
+
+    const appletDownload = p.match(/^\/neo\/applets\/(\d+)\/download$/);
+    if (appletDownload && m === 'GET') {
+      const applet = DEMO_APPLETS.find((a) => a.id === parseInt(appletDownload[1], 10));
+      const label = applet ? applet.name : 'applet';
+      return new Response(`Demo SmartApplet package (${label}) — not a real .os3kapp file.`, {
+        status: 200,
+        headers: { 'Content-Type': 'application/octet-stream' },
+      });
+    }
+
     if (p === '/files' && m === 'GET') {
       return jsonResponse(DEMO_BACKUPS);
     }
@@ -109,7 +168,7 @@
       return jsonResponse({ name: 'Chapter one', content: DEMO_SAMPLE_DOC });
     }
     if (p.startsWith('/files/download')) {
-      return new Response(DEMO_SAMPLE_DOC, { status: 200, headers: { 'Content-Type': 'text/plain' } });
+      return textResponse(DEMO_SAMPLE_DOC);
     }
 
     if (p === '/keyboard/recent') {
