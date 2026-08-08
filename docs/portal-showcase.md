@@ -16,13 +16,11 @@ Hardware photos (split cable and bench setup): [neo2-usb-wiring.md](neo2-usb-wir
 
 ## Live demo (GitHub Pages)
 
-After [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site) is enabled for this repository (**Settings → Pages → Build and deployment → GitHub Actions**), the portal is published from `firmware-web/` on each push to `main`:
-
 | Page | URL |
 |------|-----|
-| **Documents** (backups, Neo files, SmartApplets) | `https://riktastic.github.io/Neo2Buddy/` |
-| **Typing & Bluetooth** (live viewer, Bluetooth pairing) | `https://riktastic.github.io/Neo2Buddy/typing.html` |
-| **User guide** | `https://riktastic.github.io/Neo2Buddy/user-guide.html` |
+| **Documents** (backups, Neo files, SmartApplets) | https://riktastic.github.io/Neo2Buddy/ |
+| **Typing & Bluetooth** (live viewer, Bluetooth pairing) | https://riktastic.github.io/Neo2Buddy/typing.html |
+| **User guide** | https://riktastic.github.io/Neo2Buddy/user-guide.html |
 
 Demo mode activates automatically on `*.github.io`. Sample content includes:
 
