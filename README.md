@@ -24,6 +24,8 @@ Current release: **1.0.0-beta.1** in [`releases/1.0.0-beta.1/`](releases/1.0.0-b
 
 > **Beta — work in progress.** This project is early software. Expect rough edges, missing polish, and behaviour that may change between releases. Development and testing so far have used a **Dutch-market Neo2** only. **UK, US, and other regional keyboard layouts** may behave slightly differently — especially for live typing, Bluetooth passthrough, and text import/export. We have not been able to test on other regional variants yet. Bug reports and layout feedback are very welcome.
 
+> **Disclaimer.** Neo2 Buddy is an independent, community project. We are **not affiliated with, endorsed by, or sponsored by** AlphaSmart, Renaissance Learning, or any of their successors. This project does **not** reverse-engineer or redistribute AlphaSmart or Renaissance software. Device communication is implemented from **public, third-party research** (notably [NeoTools](https://github.com/lykahb/neotools) and [AlphaSync](https://github.com/tSoniq/alphasync/)) and our own interoperability work with the Neo2 hardware. *AlphaSmart* and related names are trademarks of their respective owners. If you represent the rights holder and believe this project raises a copyright or trademark concern, please [open an issue](https://github.com/Riktastic/Neo2Buddy/issues) or contact the maintainer — we want to resolve any concern cooperatively and promptly.
+
 ---
 
 ## Getting started
