@@ -225,10 +225,10 @@ static esp_err_t start_recovery_ap_now(void)
     g_wifi_started = true;
     wifi_apply_connect_power_profile();
 
-    device_status_set_wifi(DEVICE_WIFI_UNCONFIGURED, (const char *)ap_config.ap.ssid, "");
+    configure_ap_netif();
+    device_status_set_wifi(DEVICE_WIFI_UNCONFIGURED, (const char *)ap_config.ap.ssid, "192.168.4.1");
     ESP_LOGW(TAG, "Recovery hotspot ssid=%s — open http://192.168.4.1/setup.html", ap_config.ap.ssid);
     log_buffer_appendf("wifi: recovery AP ssid=%s", ap_config.ap.ssid);
-    configure_ap_netif();
     captive_dns_start();
     display_show_onboarding((const char *)ap_config.ap.ssid, (const char *)ap_config.ap.password,
                             "Home Wi-Fi failed — fix at setup");
@@ -443,10 +443,10 @@ esp_err_t wifi_manager_start_ap(void)
     g_wifi_started = true;
     wifi_apply_connect_power_profile();
 
-    device_status_set_wifi(DEVICE_WIFI_UNCONFIGURED, (const char *)ap_config.ap.ssid, "");
+    configure_ap_netif();
+    device_status_set_wifi(DEVICE_WIFI_UNCONFIGURED, (const char *)ap_config.ap.ssid, "192.168.4.1");
     ESP_LOGI(TAG, "Direct access hotspot started ssid=%s ip=192.168.4.1", ap_config.ap.ssid);
     log_buffer_appendf("wifi: direct access ssid=%s", ap_config.ap.ssid);
-    configure_ap_netif();
     captive_dns_start();
     wifi_manager_start_mdns();
     display_show_onboarding((const char *)ap_config.ap.ssid, (const char *)ap_config.ap.password,
@@ -512,4 +512,45 @@ bool wifi_manager_is_connected(void)
 bool wifi_manager_is_recovery_mode(void)
 {
     return g_recovery_mode;
+}
+
+bool wifi_manager_get_ip(char *out, size_t out_len)
+{
+    if (!out || out_len < 8) {
+        return false;
+    }
+    out[0] = '\0';
+
+    if (g_connected) {
+        esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (sta) {
+            esp_netif_ip_info_t ip;
+            if (esp_netif_get_ip_info(sta, &ip) == ESP_OK && ip.ip.addr != 0) {
+                esp_ip4addr_ntoa(&ip.ip, out, out_len);
+                return out[0] != '\0';
+            }
+        }
+    }
+
+    if (g_wifi_started) {
+        wifi_mode_t mode = WIFI_MODE_NULL;
+        if (esp_wifi_get_mode(&mode) == ESP_OK && mode == WIFI_MODE_AP) {
+            esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+            if (ap) {
+                esp_netif_ip_info_t ip;
+                if (esp_netif_get_ip_info(ap, &ip) == ESP_OK && ip.ip.addr != 0) {
+                    esp_ip4addr_ntoa(&ip.ip, out, out_len);
+                    return out[0] != '\0';
+                }
+            }
+        }
+    }
+
+    device_status_t st;
+    device_status_get(&st);
+    if (st.ip_address[0] != '\0') {
+        strlcpy(out, st.ip_address, out_len);
+        return true;
+    }
+    return false;
 }

@@ -40,3 +40,6 @@ bool wifi_manager_is_connected(void);
 
 /** True when home Wi-Fi failed and the device hotspot is up for reconfiguration. */
 bool wifi_manager_is_recovery_mode(void);
+
+/** Write the active portal IP (STA or soft-AP) into @p out. Returns true if set. */
+bool wifi_manager_get_ip(char *out, size_t out_len);

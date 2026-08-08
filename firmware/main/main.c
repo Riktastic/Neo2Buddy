@@ -41,6 +41,9 @@ static const char *TAG = "neo2_buddy";
 /** Printed once services are up so it lands after the ESP-IDF boot log noise. */
 static void print_boot_welcome(void)
 {
+    char ip[16] = {0};
+    const bool have_ip = wifi_manager_get_ip(ip, sizeof(ip));
+
     printf("\n");
     printf("  ============================================================\n");
     printf("   AlphaSmart Neo2 Buddy\n");
@@ -49,8 +52,12 @@ static void print_boot_welcome(void)
     printf("   Project : https://github.com/Riktastic/Neo2Buddy\n");
     printf("   Author  : https://github.com/Riktastic\n");
     printf("\n");
-    printf("   Open the web portal over Wi-Fi, or type 'help' on this\n");
-    printf("   serial console (login with your portal password).\n");
+    if (have_ip) {
+        printf("   Portal  : http://%s/\n", ip);
+    } else {
+        printf("   Portal  : Wi-Fi still starting (check logs for IP)\n");
+    }
+    printf("   Console : type 'help' (login with your portal password)\n");
     printf("  ============================================================\n");
     printf("\n");
     fflush(stdout);
