@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "device_status.h"
 #include "captive_dns.h"
+#include "board_config.h"
 #include "display.h"
 #include "log_buffer.h"
 #include "esp_log.h"
@@ -18,11 +19,9 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_netif_sntp.h"
-#include "mdns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/inet.h"
-#include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
@@ -35,10 +34,41 @@ static int g_sta_fail_count = 0;
 static esp_timer_handle_t g_recovery_timer = NULL;
 static TaskHandle_t g_recovery_worker = NULL;
 
+/** Ordered STA candidates for multi-network failover (preferred first, then RSSI). */
+static char g_cand_ssid[SETTINGS_WIFI_NETWORK_MAX][SETTINGS_WIFI_SSID_MAX_LENGTH + 1];
+static char g_cand_pwd[SETTINGS_WIFI_NETWORK_MAX][SETTINGS_WIFI_PASSWORD_MAX_LENGTH + 1];
+static int g_cand_count = 0;
+static int g_cand_idx = 0;
+
 #define WIFI_RECOVERY_FAIL_THRESHOLD 2
 #define WIFI_RECOVERY_TIMEOUT_US (45 * 1000 * 1000LL)
 /** 8 dBm (units of 0.25 dBm) — lowers peak current during STA auth on USB power. */
 #define WIFI_CONNECT_TX_POWER_QDBM 32
+
+static void wifi_clear_candidates(void)
+{
+    g_cand_count = 0;
+    g_cand_idx = 0;
+    memset(g_cand_ssid, 0, sizeof(g_cand_ssid));
+    memset(g_cand_pwd, 0, sizeof(g_cand_pwd));
+}
+
+static void wifi_add_candidate(const char *ssid, const char *password)
+{
+    if (!ssid || ssid[0] == '\0' || g_cand_count >= SETTINGS_WIFI_NETWORK_MAX) {
+        return;
+    }
+    for (int i = 0; i < g_cand_count; i++) {
+        if (strncmp(g_cand_ssid[i], ssid, SETTINGS_WIFI_SSID_MAX_LENGTH) == 0) {
+            return;
+        }
+    }
+    strlcpy(g_cand_ssid[g_cand_count], ssid, sizeof(g_cand_ssid[0]));
+    if (password) {
+        strlcpy(g_cand_pwd[g_cand_count], password, sizeof(g_cand_pwd[0]));
+    }
+    g_cand_count++;
+}
 
 static void wifi_manager_start_sntp(void)
 {
@@ -61,53 +91,20 @@ static void wifi_manager_start_sntp(void)
     }
 }
 
-static void wifi_manager_sanitize_hostname(const char *name, char *out, size_t out_size)
+/** Captive DNS only while first-run setup (or recovery hotspot) needs phone redirect. */
+static void wifi_maybe_start_captive_dns(bool recovery)
 {
-    if (!out || out_size == 0) {
+    if (recovery) {
+        captive_dns_start();
         return;
     }
-    size_t o = 0;
-    for (size_t i = 0; name && name[i] != '\0' && o + 1 < out_size; i++) {
-        unsigned char c = (unsigned char)name[i];
-        if (isalnum(c)) {
-            out[o++] = (char)tolower(c);
-        } else if ((c == ' ' || c == '_' || c == '-') && o > 0 && out[o - 1] != '-') {
-            out[o++] = '-';
-        }
+    device_settings_t s;
+    if (settings_load(&s) == ESP_OK && s.onboarding_complete) {
+        captive_dns_stop();
+        ESP_LOGI(TAG, "Captive DNS skipped (onboarding complete)");
+        return;
     }
-    while (o > 0 && out[o - 1] == '-') {
-        o--;
-    }
-    out[o] = '\0';
-    if (o == 0) {
-        strlcpy(out, "neo2buddy", out_size);
-    }
-}
-
-static void wifi_manager_start_mdns(void)
-{
-    static bool started = false;
-    char hostname[48];
-    wifi_manager_sanitize_hostname(settings_get_device_name(), hostname, sizeof(hostname));
-
-    if (!started) {
-        esp_err_t err = mdns_init();
-        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-            ESP_LOGW(TAG, "mDNS init failed: %s", esp_err_to_name(err));
-            return;
-        }
-        started = true;
-    }
-    (void)mdns_hostname_set(hostname);
-    (void)mdns_instance_name_set(settings_get_device_name());
-    /* remove may fail if never registered — ignore and (re)add */
-    (void)mdns_service_remove("_http", "_tcp");
-    esp_err_t add = mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
-    if (add != ESP_OK && add != ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "mDNS _http service add failed: %s", esp_err_to_name(add));
-    }
-    ESP_LOGI(TAG, "mDNS hostname %s.local", hostname);
-    log_buffer_appendf("wifi: mdns %s.local", hostname);
+    captive_dns_start();
 }
 
 static bool disconnect_reason_triggers_recovery(int reason)
@@ -230,8 +227,10 @@ static esp_err_t start_recovery_ap_now(void)
     ESP_LOGW(TAG, "Recovery hotspot ssid=%s — open http://192.168.4.1/setup.html", ap_config.ap.ssid);
     log_buffer_appendf("wifi: recovery AP ssid=%s", ap_config.ap.ssid);
     captive_dns_start();
+#if HAVE_OLED
     display_show_onboarding((const char *)ap_config.ap.ssid, (const char *)ap_config.ap.password,
                             "Home Wi-Fi failed — fix at setup");
+#endif
     return ESP_OK;
 }
 
@@ -320,6 +319,22 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             ESP_LOGW(TAG, "Station disconnected (reason=%d)", reason);
             log_buffer_appendf("wifi: STA disconnected reason=%d", reason);
             if (disconnect_reason_triggers_recovery(reason)) {
+                /* Try the next saved network before counting toward recovery. */
+                if (g_cand_idx + 1 < g_cand_count) {
+                    g_cand_idx++;
+                    wifi_config_t sta_config = {0};
+                    strlcpy((char *)sta_config.sta.ssid, g_cand_ssid[g_cand_idx],
+                            sizeof(sta_config.sta.ssid));
+                    strlcpy((char *)sta_config.sta.password, g_cand_pwd[g_cand_idx],
+                            sizeof(sta_config.sta.password));
+                    esp_wifi_set_config(WIFI_IF_STA, &sta_config);
+                    device_status_set_wifi(DEVICE_WIFI_CONNECTING, g_cand_ssid[g_cand_idx], "");
+                    ESP_LOGW(TAG, "Trying next saved network SSID=%s (%d/%d)",
+                             g_cand_ssid[g_cand_idx], g_cand_idx + 1, g_cand_count);
+                    log_buffer_appendf("wifi: try next ssid=%s", g_cand_ssid[g_cand_idx]);
+                    esp_wifi_connect();
+                    return;
+                }
                 g_sta_fail_count++;
                 ESP_LOGW(TAG, "Home join failure %d/%d (reason=%d)",
                          g_sta_fail_count, WIFI_RECOVERY_FAIL_THRESHOLD, reason);
@@ -339,12 +354,29 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         cancel_recovery_timer();
         char ipstr[32];
         esp_ip4addr_ntoa(&ev->ip_info.ip, ipstr, sizeof(ipstr));
-        device_status_set_wifi(DEVICE_WIFI_CONNECTED, settings_get_wifi_ssid(), ipstr);
+        wifi_config_t cfg = {0};
+        const char *ssid = "";
+        if (esp_wifi_get_config(WIFI_IF_STA, &cfg) == ESP_OK) {
+            ssid = (const char *)cfg.sta.ssid;
+        }
+        if (ssid[0] == '\0' && g_cand_idx >= 0 && g_cand_idx < g_cand_count) {
+            ssid = g_cand_ssid[g_cand_idx];
+        }
+        device_status_set_wifi(DEVICE_WIFI_CONNECTED, ssid, ipstr);
+        if (ssid[0] != '\0') {
+            device_settings_t s;
+            if (settings_load(&s) == ESP_OK) {
+                settings_wifi_set_preferred(&s, ssid);
+                settings_save(&s);
+            }
+        }
+#if HAVE_OLED
         display_request_home();
+#endif
         wifi_manager_start_sntp();
-        wifi_manager_start_mdns();
-        ESP_LOGI(TAG, "Home network connected. IP=%s (portal: http://%s/)", ipstr, ipstr);
-        log_buffer_appendf("wifi: connected ip=%s", ipstr);
+        ESP_LOGI(TAG, "Home network connected. SSID=%s IP=%s (portal: http://%s/)", ssid, ipstr,
+                 ipstr);
+        log_buffer_appendf("wifi: connected ssid=%s ip=%s", ssid, ipstr);
     }
 }
 
@@ -390,9 +422,10 @@ esp_err_t wifi_manager_init(void)
         return wifi_manager_start_ap();
     }
 
-    if (s.network_mode == SETTINGS_NETWORK_HOME && s.wifi_ssid[0] != '\0') {
-        ESP_LOGI(TAG, "Home network mode — joining SSID=%s", s.wifi_ssid);
-        err = wifi_manager_connect(s.wifi_ssid, s.wifi_password);
+    if (s.network_mode == SETTINGS_NETWORK_HOME &&
+        (s.wifi_ssid[0] != '\0' || s.wifi_network_count > 0)) {
+        ESP_LOGI(TAG, "Home network mode — joining best saved SSID");
+        err = wifi_manager_connect_best();
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Home Wi-Fi failed (%s); falling back to Direct access", esp_err_to_name(err));
             return wifi_manager_start_ap();
@@ -447,19 +480,17 @@ esp_err_t wifi_manager_start_ap(void)
     device_status_set_wifi(DEVICE_WIFI_UNCONFIGURED, (const char *)ap_config.ap.ssid, "192.168.4.1");
     ESP_LOGI(TAG, "Direct access hotspot started ssid=%s ip=192.168.4.1", ap_config.ap.ssid);
     log_buffer_appendf("wifi: direct access ssid=%s", ap_config.ap.ssid);
-    captive_dns_start();
-    wifi_manager_start_mdns();
+    /* SoftAP: captive DNS only for first-run setup. */
+    wifi_maybe_start_captive_dns(false);
+#if HAVE_OLED
     display_show_onboarding((const char *)ap_config.ap.ssid, (const char *)ap_config.ap.password,
                             "http://192.168.4.1/setup.html");
+#endif
     return ESP_OK;
 }
 
-esp_err_t wifi_manager_connect(const char *ssid, const char *password)
+static esp_err_t wifi_sta_begin(const char *ssid, const char *password)
 {
-    if (!ssid || ssid[0] == '\0') {
-        return ESP_ERR_INVALID_ARG;
-    }
-
     wifi_config_t sta_config = {0};
     strncpy((char *)sta_config.sta.ssid, ssid, sizeof(sta_config.sta.ssid) - 1);
     if (password) {
@@ -488,13 +519,151 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
 
     g_recovery_mode = false;
     g_sta_fail_count = 0;
+    g_cand_idx = 0;
     start_recovery_timer();
 
     device_status_set_wifi(DEVICE_WIFI_CONNECTING, ssid, "");
     ESP_LOGI(TAG, "Connecting to home network SSID=%s (STA-only)", ssid);
     log_buffer_appendf("wifi: connecting to %s", ssid);
+#if HAVE_OLED
     display_show_onboarding(ssid, "", "Connecting to home network...");
+#endif
     return ESP_OK;
+}
+
+esp_err_t wifi_manager_connect(const char *ssid, const char *password)
+{
+    if (!ssid || ssid[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    wifi_clear_candidates();
+    wifi_add_candidate(ssid, password);
+    return wifi_sta_begin(ssid, password);
+}
+
+esp_err_t wifi_manager_connect_best(void)
+{
+    device_settings_t s;
+    if (settings_load(&s) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    settings_wifi_sync_primary(&s);
+    if (s.wifi_network_count == 0 && s.wifi_ssid[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    wifi_clear_candidates();
+
+    /* Preferred first, then remaining saved networks. */
+    if (s.wifi_ssid[0] != '\0') {
+        const char *pwd = settings_wifi_password_for(&s, s.wifi_ssid);
+        wifi_add_candidate(s.wifi_ssid, pwd ? pwd : s.wifi_password);
+    }
+    for (uint8_t i = 0; i < s.wifi_network_count; i++) {
+        wifi_add_candidate(s.wifi_networks[i].ssid, s.wifi_networks[i].password);
+    }
+    if (g_cand_count == 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    wifi_manager_stop_radio();
+    esp_err_t err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err != ESP_OK) {
+        return err;
+    }
+    /* Empty STA config so we can scan before choosing. */
+    wifi_config_t empty = {0};
+    esp_wifi_set_config(WIFI_IF_STA, &empty);
+    err = esp_wifi_start();
+    if (err != ESP_OK) {
+        return err;
+    }
+    g_wifi_started = true;
+    wifi_apply_connect_power_profile();
+
+    err = esp_wifi_scan_start(NULL, true);
+    int16_t best_rssi[SETTINGS_WIFI_NETWORK_MAX];
+    bool seen[SETTINGS_WIFI_NETWORK_MAX];
+    for (int i = 0; i < SETTINGS_WIFI_NETWORK_MAX; i++) {
+        best_rssi[i] = -127;
+        seen[i] = false;
+    }
+    if (err == ESP_OK) {
+        uint16_t ap_count = 32;
+        wifi_ap_record_t ap_records[32];
+        if (esp_wifi_scan_get_ap_records(&ap_count, ap_records) == ESP_OK) {
+            for (uint16_t a = 0; a < ap_count; a++) {
+                if (ap_records[a].ssid[0] == '\0') {
+                    continue;
+                }
+                for (int c = 0; c < g_cand_count; c++) {
+                    if (strncmp((const char *)ap_records[a].ssid, g_cand_ssid[c],
+                                SETTINGS_WIFI_SSID_MAX_LENGTH) == 0) {
+                        seen[c] = true;
+                        if (ap_records[a].rssi > best_rssi[c]) {
+                            best_rssi[c] = ap_records[a].rssi;
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        ESP_LOGW(TAG, "Wi-Fi scan failed (%s); using preferred order", esp_err_to_name(err));
+    }
+
+    /* Reorder: preferred if visible, else strongest visible, then unseen. */
+    char ordered_ssid[SETTINGS_WIFI_NETWORK_MAX][SETTINGS_WIFI_SSID_MAX_LENGTH + 1];
+    char ordered_pwd[SETTINGS_WIFI_NETWORK_MAX][SETTINGS_WIFI_PASSWORD_MAX_LENGTH + 1];
+    int ordered_count = 0;
+    bool used[SETTINGS_WIFI_NETWORK_MAX] = {false};
+
+    if (g_cand_count > 0 && seen[0] && !used[0]) {
+        strlcpy(ordered_ssid[ordered_count], g_cand_ssid[0], sizeof(ordered_ssid[0]));
+        strlcpy(ordered_pwd[ordered_count], g_cand_pwd[0], sizeof(ordered_pwd[0]));
+        used[0] = true;
+        ordered_count++;
+    }
+
+    for (;;) {
+        int best = -1;
+        for (int c = 0; c < g_cand_count; c++) {
+            if (used[c] || !seen[c]) {
+                continue;
+            }
+            if (best < 0 || best_rssi[c] > best_rssi[best]) {
+                best = c;
+            }
+        }
+        if (best < 0) {
+            break;
+        }
+        strlcpy(ordered_ssid[ordered_count], g_cand_ssid[best], sizeof(ordered_ssid[0]));
+        strlcpy(ordered_pwd[ordered_count], g_cand_pwd[best], sizeof(ordered_pwd[0]));
+        used[best] = true;
+        ordered_count++;
+    }
+    for (int c = 0; c < g_cand_count; c++) {
+        if (used[c]) {
+            continue;
+        }
+        strlcpy(ordered_ssid[ordered_count], g_cand_ssid[c], sizeof(ordered_ssid[0]));
+        strlcpy(ordered_pwd[ordered_count], g_cand_pwd[c], sizeof(ordered_pwd[0]));
+        used[c] = true;
+        ordered_count++;
+    }
+
+    wifi_clear_candidates();
+    for (int i = 0; i < ordered_count; i++) {
+        wifi_add_candidate(ordered_ssid[i], ordered_pwd[i]);
+    }
+    if (g_cand_count == 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "Best saved network SSID=%s (%d candidates)", g_cand_ssid[0], g_cand_count);
+    /* Preserve full candidate list for failover (do not call wifi_manager_connect). */
+    return wifi_sta_begin(g_cand_ssid[0], g_cand_pwd[0]);
 }
 
 esp_err_t wifi_manager_stop(void)

@@ -20,6 +20,21 @@ from .exceptions import ApiError, AuthError, BusyError, Neo2BuddyError
 
 ALPHAWORD_APPLET_ID = 0xA000
 
+# Stock App Store IDs (bundled SmartApplets, all v1.0a)
+STOCK_APPLET_IDS = {
+    "task-pad": 0xA1B1,
+    "dice-table": 0xA1B2,
+    "script-pad": 0xA1B3,
+    "word-tree": 0xA1B4,
+    "type-drill": 0xA1B5,
+    "flash-cards": 0xA1B6,
+    "math-drill": 0xA1B7,
+    "snake": 0xA1B8,
+    "hang-word": 0xA1B9,
+    "tic-tac-toe": 0xA1BA,
+    "touch-type": 0xA1BB,
+}
+
 
 class Neo2BuddyClient:
     """HTTP client for a Neo2 Buddy on the local network."""
@@ -435,6 +450,10 @@ class Neo2BuddyClient:
         data = self._request("POST", "ble/cancel", json_body={})
         return data if isinstance(data, dict) else {"cancelled": True}
 
+    def ble_clear_bonds(self) -> dict[str, Any]:
+        data = self._request("POST", "ble/bonds/clear", json_body={})
+        return data if isinstance(data, dict) else {"cleared": True}
+
     # ------------------------------------------------------------------
     # USB keyboard capture (Neo HID mode)
     # ------------------------------------------------------------------
@@ -821,6 +840,84 @@ class Neo2BuddyClient:
     def download_applet(self, applet_id: int, dest: str | Path) -> Path:
         """Download installed applet binary (.os3kapp)."""
         return self._download_to_path(f"neo/applets/{applet_id}/download", dest)
+
+    # ------------------------------------------------------------------
+    # Stock App Store (bundled in buddy firmware)
+    # ------------------------------------------------------------------
+
+    def list_stock_applets(self) -> dict[str, Any]:
+        """App Store catalog (GET /neo/stock-applets)."""
+        data = self._request("GET", "neo/stock-applets")
+        if not isinstance(data, dict):
+            raise ApiError("Unexpected stock applets payload")
+        return data
+
+    def install_stock_applet(self, slug: str) -> dict[str, Any]:
+        """Install a bundled stock SmartApplet by slug (e.g. 'flash-cards')."""
+        data = self._request(
+            "POST",
+            f"neo/stock-applets/{slug}/install",
+            timeout=max(self.timeout, 120.0),
+        )
+        return data if isinstance(data, dict) else {"ok": True}
+
+    def upload_flash_deck_text(self, deck_text: str) -> dict[str, Any]:
+        """Push front|back lines directly to the Flash Cards applet on the Neo."""
+        data = self._request(
+            "POST",
+            "neo/stock-applets/flash-cards/deck",
+            data=deck_text.encode("utf-8"),
+            headers={"Content-Type": "text/plain; charset=utf-8"},
+            timeout=max(self.timeout, 120.0),
+        )
+        return data if isinstance(data, dict) else {"ok": True}
+
+    # ------------------------------------------------------------------
+    # Flash Cards deck library (named sets on buddy storage)
+    # ------------------------------------------------------------------
+
+    def list_flash_decks(self) -> list[dict[str, Any]]:
+        """List named flashcard sets stored on the buddy (GET /flashdecks)."""
+        data = self._request("GET", "flashdecks")
+        if isinstance(data, dict) and isinstance(data.get("decks"), list):
+            return data["decks"]
+        raise ApiError("Unexpected flash decks payload")
+
+    def get_flash_deck(self, deck_id: str) -> dict[str, Any]:
+        """Fetch one deck including cards (GET /flashdecks/{id})."""
+        data = self._request("GET", f"flashdecks/{deck_id}")
+        if not isinstance(data, dict):
+            raise ApiError("Unexpected flash deck payload")
+        return data
+
+    def save_flash_deck(
+        self,
+        deck_id: str,
+        *,
+        name: str,
+        cards: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        """Create or update a named deck (PUT /flashdecks/{id}). Max 16 cards."""
+        data = self._request(
+            "PUT",
+            f"flashdecks/{deck_id}",
+            json_body={"name": name, "cards": cards},
+        )
+        return data if isinstance(data, dict) else {"ok": True}
+
+    def delete_flash_deck(self, deck_id: str) -> dict[str, Any]:
+        """Delete a named deck (protected starter en-nl-basic cannot be deleted)."""
+        data = self._request("DELETE", f"flashdecks/{deck_id}")
+        return data if isinstance(data, dict) else {"ok": True}
+
+    def push_flash_deck(self, deck_id: str) -> dict[str, Any]:
+        """Push a buddy-stored deck to Flash Cards on the connected Neo."""
+        data = self._request(
+            "POST",
+            f"flashdecks/{deck_id}/push",
+            timeout=max(self.timeout, 120.0),
+        )
+        return data if isinstance(data, dict) else {"ok": True}
 
     def get_applet_settings(self, applet_id: int, flags: int = 0) -> list[dict[str, Any]]:
         data = self._request("GET", "command/settings", params={"applet_id": applet_id, "flags": flags})

@@ -23,6 +23,12 @@ esp_err_t wifi_manager_init(void);
  */
 esp_err_t wifi_manager_connect(const char *ssid, const char *password);
 
+/**
+ * Scan and join the best saved network: preferred if visible, else strongest
+ * saved SSID in range. Falls through remaining saved networks on join failure.
+ */
+esp_err_t wifi_manager_connect_best(void);
+
 /** Start the onboarding AP (useful to force AP mode). */
 esp_err_t wifi_manager_start_ap(void);
 

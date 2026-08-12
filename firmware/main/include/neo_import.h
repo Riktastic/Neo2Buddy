@@ -13,7 +13,8 @@
  *
  * Content policy (neo_import.c / neo_import_text.c):
  *   - Skip blank / whitespace-only documents.
- *   - Skip when any existing backup already has identical UTF-8 bytes.
+ *   - Default save skips when any existing backup already has identical UTF-8 bytes.
+ *   - "Backup all" uses force-save and always rewrites today's canonical path.
  *   - Prune oldest `.txt` files when free space or count limits are hit.
  *
  * Unchanged detection can also compare today's path via neo_import_file_matches
@@ -55,6 +56,8 @@ bool neo_import_file_matches(const char *path, const char *text, size_t text_len
 
 /** True when text is empty or only spaces, tabs, CR, or LF. */
 bool neo_import_text_is_blank(const char *text, size_t text_len);
+/** True when Neo raw is only AlphaWord pad/unused bytes (empty 512 B slots). */
+bool neo_import_neo_raw_is_empty(const uint8_t *raw, size_t raw_len);
 
 /**
  * True when any existing backup in the imports directory already has the same
@@ -81,6 +84,13 @@ esp_err_t neo_import_save_document(const neo_document_t *document,
  */
 esp_err_t neo_import_save_document_if_changed(const neo_document_t *document, char *saved_path,
                                               size_t saved_path_size);
+
+/**
+ * Force path for "Backup all": write today's canonical file for every non-blank
+ * document, even when an identical backup already exists.
+ */
+esp_err_t neo_import_save_document_force(const neo_document_t *document, char *saved_path,
+                                         size_t saved_path_size);
 
 /** Save raw NEO bytes into the imports directory; used for raw file downloads. */
 esp_err_t neo_import_save_raw_document(const uint8_t *neo_data, size_t neo_len,

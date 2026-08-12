@@ -2,8 +2,13 @@
 # Clone https://github.com/lykahb/neotools separately if you need the upstream reference.
 inspiration/
 
+# BetaWise clone + m68k Docker build tree (archived Neo Link used this)
+tools/betawise/
+tools/betawise-v0.2-build/
+
 # ESP-IDF build output
 firmware/build/
+firmware/build-custom/
 firmware/test/build/
 firmware/managed_components/
 firmware/sdkconfig.old
@@ -20,6 +25,7 @@ __pycache__/
 .ruff_cache/
 dist/
 build/
+flasher/_native_stage/
 
 # IDE / editor
 .vscode/
@@ -43,3 +49,14 @@ credentials.json
 *.log
 *.tmp
 *.bak
+
+# Local custom Image Builder exports
+releases/custom/
+
+# Unpacked native Setup trees (keep the .zip only)
+releases/**/neo2buddy-setup-windows/
+releases/**/neo2buddy-setup-macos/
+releases/**/neo2buddy-setup-linux/
+releases/**/neo2buddy-setup-*/
+!releases/**/neo2buddy-setup-*.zip
+

@@ -1,6 +1,6 @@
 /**
  * @file cloud_sync.h
- * @brief Optional WebDAV / S3-compatible upload of local Neo backups.
+ * @brief Optional WebDAV / S3 / Hammer Ink upload of local Neo backups.
  *
  * Local SD/spiflash copies remain authoritative; cloud upload never deletes
  * local files. Credentials live in a dedicated NVS namespace and are never
@@ -19,13 +19,14 @@
 #define CLOUD_SYNC_FOLDER_MAX 128
 #define CLOUD_SYNC_BUCKET_MAX 64
 #define CLOUD_SYNC_REGION_MAX 32
-#define CLOUD_SYNC_USERNAME_MAX 64
+#define CLOUD_SYNC_USERNAME_MAX 128
 #define CLOUD_SYNC_SECRET_MAX 128
 
 typedef enum {
     CLOUD_SYNC_PROVIDER_NONE = 0,
     CLOUD_SYNC_PROVIDER_WEBDAV,
     CLOUD_SYNC_PROVIDER_S3,
+    CLOUD_SYNC_PROVIDER_HAMMER,
 } cloud_sync_provider_t;
 
 typedef struct {

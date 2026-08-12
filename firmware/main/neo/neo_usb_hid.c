@@ -12,7 +12,12 @@
 #include "ble_hid.h"
 #include "hid_debug.h"
 #include "neo_debug.h"
+#include "neo_live.h"
 #include "usb_host_neo.h"
+
+#if CONFIG_BUDDY_NEO_LINK
+#include "neo_link_transport.h"
+#endif
 
 #include "esp_log.h"
 
@@ -119,8 +124,11 @@ void neo_usb_hid_handle_report(const uint8_t *report, size_t length)
         return;
     }
 
-    ESP_LOGI(TAG, "HID report: %02x %02x %02x %02x %02x %02x %02x %02x", report[0], report[1], report[2],
-             report[3], report[4], report[5], report[6], report[7]);
+    /* Serial HID dump is opt-in (same as `keyboard keylog on`); ring buffers stay. */
+    if (neo_live_get_key_log()) {
+        ESP_LOGI(TAG, "HID report: %02x %02x %02x %02x %02x %02x %02x %02x", report[0], report[1],
+                 report[2], report[3], report[4], report[5], report[6], report[7]);
+    }
     neo_debug_event("HID %02x %02x %02x %02x %02x %02x %02x %02x", report[0], report[1], report[2], report[3],
                     report[4], report[5], report[6], report[7]);
     hid_debug_append(report, length);
@@ -154,6 +162,15 @@ void neo_usb_hid_handle_report(const uint8_t *report, size_t length)
         }
         if (code < sizeof(s_us_noshift) && map[code] != '\0') {
             char ch = map[code];
+#if CONFIG_BUDDY_NEO_LINK
+            if (ch == '~' || neo_link_transport_in_frame()) {
+                char one[2] = { ch, '\0' };
+                neo_link_transport_feed_text(one, 1);
+                if (neo_link_transport_in_frame()) {
+                    continue;
+                }
+            }
+#endif
             usb_host_neo_publish_keyboard_text(&ch, 1);
             continue;
         }

@@ -1,28 +1,21 @@
-Web (HTTP API and SPA)
-======================
+# Web (HTTP API)
 
-This folder contains the HTTP endpoints and the Single-Page Application (SPA)
-assets used to manage the device over the network. The server-side code
-implements request validation, authentication and delegates work to the
-`services/` modules.
+This folder is the **C HTTP layer** only. The browser UI lives in repo-root
+`firmware-web/` and is packed into LittleFS at build time.
 
-Key files
----------
+Compiled only when **`HAVE_WIFI_WEB`** is on (Full / Headless / No-BLE profiles).
+UART-slim builds omit this code path entirely.
 
-- `web_api_http.c` — registers HTTP routes and handlers (status, files,
-  keyboard, settings, command endpoints).
-- `firmware-web/` — SPA static files (HTML/CSS/JS) packed into LittleFS and served by the firmware.
+## Key files
 
-Guidelines
----------
+- `web_api_http.c` / `.h` — registers HTTP routes and handlers (status, files,
+  keyboard, settings, applets / Applet Store, command endpoints).
+- Static SPA — edit `firmware-web/`; do not put HTML/CSS/JS here.
+
+## Guidelines
 
 - Keep HTTP handlers minimal: validate inputs, check auth, call into services.
-- Use `cJSON` (or similar) for JSON parsing rather than naive string parsing.
-- Do not perform hardware I/O directly in HTTP handlers; use `services/`.
-
-TODOs
------
-
-- Replace existing string-based JSON parsing with `cJSON` and strict
-  validation in `web_api_http.c`.
-- Add authentication rate-limiting and token expiry.
+- Use `cJSON` for JSON parsing rather than naive string parsing.
+- Do not perform hardware I/O directly in HTTP handlers; use `services/` or `neo/`.
+- Guard SD / stock-applet paths with `#if HAVE_SDCARD` / `#if HAVE_STOCK_APPLETS`
+  (include `board_config.h` first).

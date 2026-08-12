@@ -1,7 +1,8 @@
 # Cloud Sync
 
-Device-side upload of local Neo backups to **WebDAV** (Nextcloud, ownCloud, NAS) or
-**S3-compatible** storage (AWS S3, Cloudflare R2, Backblaze B2, MinIO).
+Device-side upload of local Neo backups to **WebDAV** (Nextcloud, ownCloud, NAS),
+**S3-compatible** storage (AWS S3, Cloudflare R2, Backblaze B2, MinIO), or
+**Hammer Ink** ([hammer.ink](https://hammer.ink/) — official Hammer Editor sync).
 
 Local SD/spiflash copies remain the source of truth. A successful cloud upload
 **never deletes** local files.
@@ -64,6 +65,24 @@ Secrets are **never returned** in API responses or logs.
 }
 ```
 
+### PUT body example (Hammer Ink)
+
+```json
+{
+  "provider": "hammer",
+  "enabled": true,
+  "endpoint": "https://hammer.ink",
+  "path": "Neo2 Buddy",
+  "username": "you@example.com",
+  "secret": "your-hammer-password"
+}
+```
+
+Hammer uploads each local `*.txt` backup as a **Note** inside the named project
+(created on first sync). Filename → note entity IDs are remembered so later
+uploads overwrite the same notes. This is a one-way backup, not full Hammer
+project sync.
+
 S3 uses **path-style** URLs: `{endpoint}/{bucket}/{folder}/{filename}` with AWS
 Signature Version 4. Requires a valid clock (SNTP on home Wi‑Fi).
 
@@ -93,6 +112,7 @@ so tests always use the values on screen.
 
 ## Implementation
 
-- `firmware/main/services/cloud_sync.c` — WebDAV PUT + MKCOL, S3 SigV4, retries, NVS status
+- `firmware/main/services/cloud_sync.c` — WebDAV PUT + MKCOL, S3 SigV4, Hammer dispatch, NVS status
+- `firmware/main/services/hammer_ink.c` — Hammer protocol v3 login + project/note upload
 - `firmware/main/web/web_api_http.c` — HTTP handlers
 - `firmware-web/js/app.js` — setup checklist and health display

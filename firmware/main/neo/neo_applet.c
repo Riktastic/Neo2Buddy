@@ -228,7 +228,8 @@ esp_err_t neo_applet_remove_all(void)
     return result;
 }
 
-/* Fetch a full applet blob into `content` using the BLOCK_READ flow. */
+/* Fetch a full applet blob into `content` using the BLOCK_READ flow (NeoTools
+ * applets fetch → REQUEST_READ_APPLET 0x0f on system dialogue 0x0000). */
 esp_err_t neo_applet_fetch(uint16_t applet_id, uint8_t *content, size_t capacity, size_t *out_length)
 {
     if (!content || !out_length) return ESP_ERR_INVALID_ARG;
@@ -239,16 +240,39 @@ esp_err_t neo_applet_fetch(uint16_t applet_id, uint8_t *content, size_t capacity
     neo_message_t response;
     neo_message_init(&request, NEO_REQUEST_READ_APPLET, args);
     esp_err_t result = neo_device_dialogue_start(NEO_SYSTEM_APPLET_ID);
+    size_t expected = 0;
     if (result == ESP_OK) {
         result = neo_device_send_command(&request, NEO_RESPONSE_READ_FILE, 1000, &response);
     }
     if (result == ESP_OK) {
-        size_t expected = neo_message_argument(&response, 1, 4);
+        expected = neo_message_argument(&response, 1, 4);
         neo_debug_event("READ_APPLET id=0x%04x expect=%u bytes", applet_id, (unsigned)expected);
-        result = neo_device_read_extended(content, capacity, expected, out_length);
+        if (expected == 0) {
+            result = ESP_ERR_NOT_FOUND;
+        } else if (expected > capacity) {
+            neo_debug_event("READ_APPLET too large expect=%u cap=%u", (unsigned)expected, (unsigned)capacity);
+            result = ESP_ERR_NO_MEM;
+        } else {
+            result = neo_device_read_extended(content, capacity, expected, out_length);
+        }
     }
     esp_err_t end_result = neo_device_dialogue_end();
     esp_err_t final = result == ESP_OK ? end_result : result;
+    if (final == ESP_OK && *out_length != expected) {
+        neo_debug_event("READ_APPLET length mismatch got=%u expect=%u", (unsigned)*out_length,
+                        (unsigned)expected);
+        final = ESP_ERR_INVALID_SIZE;
+    }
+    /* Regular SmartApplets are C0FFEEAD…CAFEFEED packages. Applet id 0 is a raw
+     * firmware ROM dump (NeoTools: applets fetch 0) — skip package validation. */
+    if (final == ESP_OK && applet_id != 0) {
+        neo_applet_info_t info;
+        final = neo_applet_inspect(content, *out_length, &info);
+        if (final == ESP_OK && info.applet_id != applet_id) {
+            neo_debug_event("READ_APPLET id mismatch header=0x%04x asked=0x%04x", info.applet_id, applet_id);
+            final = ESP_ERR_INVALID_STATE;
+        }
+    }
     if (final == ESP_OK) {
         neo_debug_event("READ_APPLET ok id=0x%04x bytes=%u", applet_id, (unsigned)*out_length);
     } else {
@@ -307,14 +331,19 @@ esp_err_t neo_applet_install(const uint8_t *content, size_t content_length, bool
 
     uint32_t required_size = applet.ram_size + applet.file_space;
     neo_avail_space_t space = {0};
-    if (neo_space_get_available(&space) == ESP_OK) {
-        if (applet.rom_size > space.free_rom || required_size > space.free_ram) {
-            neo_debug_event("WRITE_APPLET insufficient space need_rom=%lu free_rom=%lu need_ram=%lu free_ram=%lu",
-                            (unsigned long)applet.rom_size, (unsigned long)space.free_rom,
-                            (unsigned long)required_size, (unsigned long)space.free_ram);
-            neo_device_unlock();
-            return ESP_ERR_NO_MEM;
-        }
+    result = neo_space_get_available(&space);
+    if (result != ESP_OK) {
+        /* Fail closed: never write an applet when free space is unknown. */
+        neo_debug_event("WRITE_APPLET space query failed: %s", esp_err_to_name(result));
+        neo_device_unlock();
+        return result;
+    }
+    if (applet.rom_size > space.free_rom || required_size > space.free_ram) {
+        neo_debug_event("WRITE_APPLET insufficient space need_rom=%lu free_rom=%lu need_ram=%lu free_ram=%lu",
+                        (unsigned long)applet.rom_size, (unsigned long)space.free_rom,
+                        (unsigned long)required_size, (unsigned long)space.free_ram);
+        neo_device_unlock();
+        return ESP_ERR_NO_MEM;
     }
     uint32_t packed_size = applet.rom_size | ((required_size & 0xffff0000UL) << 8);
     const uint32_t args[][3] = {{packed_size, 1, 4}, {required_size, 5, 2}, {0, 0, 0}};
@@ -328,20 +357,34 @@ esp_err_t neo_applet_install(const uint8_t *content, size_t content_length, bool
         result = neo_device_write_applet_content(content, content_length);
     }
     if (result == ESP_OK) {
-        /* NeoTools: write FINALIZE, then retry receive until RESPONSE_FINALIZE. */
+        /* NeoTools: write FINALIZE (long USB timeout), then retry receive until RESPONSE_FINALIZE. */
         neo_message_init(&request, NEO_REQUEST_FINALIZE_WRITING_APPLET, NULL);
-        result = neo_device_send_message(&request);
+        result = neo_device_write(request.data, sizeof(request.data), 24000);
         if (result == ESP_OK) {
             result = ESP_ERR_TIMEOUT;
             for (int retry = 0; retry < 10; retry++) {
                 neo_message_t response;
                 esp_err_t rx = neo_device_receive_message(&response, 5000);
-                if (rx == ESP_OK &&
-                    neo_message_command(&response) == NEO_RESPONSE_FINALIZE_WRITING_APPLET) {
+                if (rx != ESP_OK) {
+                    neo_debug_event("FINALIZE waiting retry=%d: %s", retry, esp_err_to_name(rx));
+                    continue;
+                }
+                uint8_t cmd = neo_message_command(&response);
+                if (cmd == NEO_RESPONSE_FINALIZE_WRITING_APPLET) {
                     result = ESP_OK;
                     break;
                 }
-                neo_debug_event("FINALIZE waiting retry=%d: %s", retry, esp_err_to_name(rx));
+                if (cmd == NEO_ERROR_OUTOFMEMORY) {
+                    neo_debug_event("FINALIZE Neo out of memory");
+                    result = ESP_ERR_NO_MEM;
+                    break;
+                }
+                if (cmd >= 0x86) {
+                    neo_debug_event("FINALIZE Neo error 0x%02x: %s", cmd, neo_message_error_string(cmd));
+                    result = ESP_FAIL;
+                    break;
+                }
+                neo_debug_event("FINALIZE unexpected response 0x%02x retry=%d", cmd, retry);
             }
         }
     }

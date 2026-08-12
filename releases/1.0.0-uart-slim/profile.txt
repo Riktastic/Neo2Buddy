@@ -1,0 +1,3 @@
+﻿label=uart-slim
+version=1.0.0
+profile=uart-slim

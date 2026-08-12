@@ -16,7 +16,7 @@
 #include "settings.h"
 
 #define SETTINGS_NAMESPACE "device"
-#define SETTINGS_VERSION 6
+#define SETTINGS_VERSION 7
 static const char *const KEY_AUTO_BACKUP = "auto_bak";
 static const char *const KEY_AUTO_CLOUD = "auto_cloud";
 static const char *const KEY_NEO_LABEL = "neo_label";
@@ -37,6 +37,152 @@ static const char *const KEY_WIFI_IP = "wifi_ip";
 static const char *const KEY_WIFI_NETMASK = "wifi_net";
 static const char *const KEY_WIFI_GATEWAY = "wifi_gw";
 static const char *const KEY_WIFI_DNS = "wifi_dns";
+static const char *const KEY_WIFI_NETS = "wifi_nets";
+
+typedef struct {
+    char ssid[SETTINGS_WIFI_SSID_MAX_LENGTH + 1];
+    char password[SETTINGS_WIFI_PASSWORD_MAX_LENGTH + 1];
+} settings_wifi_net_blob_entry_t;
+
+typedef struct {
+    uint8_t count;
+    settings_wifi_net_blob_entry_t nets[SETTINGS_WIFI_NETWORK_MAX];
+} settings_wifi_nets_blob_t;
+
+static int settings_wifi_find_index(const device_settings_t *settings, const char *ssid)
+{
+    if (!settings || !ssid || ssid[0] == '\0') {
+        return -1;
+    }
+    for (uint8_t i = 0; i < settings->wifi_network_count && i < SETTINGS_WIFI_NETWORK_MAX; i++) {
+        if (strncmp(settings->wifi_networks[i].ssid, ssid, SETTINGS_WIFI_SSID_MAX_LENGTH) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+bool settings_wifi_upsert(device_settings_t *settings, const char *ssid, const char *password)
+{
+    if (!settings || !ssid || ssid[0] == '\0') {
+        return false;
+    }
+    int idx = settings_wifi_find_index(settings, ssid);
+    if (idx < 0) {
+        if (settings->wifi_network_count >= SETTINGS_WIFI_NETWORK_MAX) {
+            return false;
+        }
+        idx = (int)settings->wifi_network_count;
+        settings->wifi_network_count++;
+        memset(&settings->wifi_networks[idx], 0, sizeof(settings->wifi_networks[idx]));
+        strlcpy(settings->wifi_networks[idx].ssid, ssid, sizeof(settings->wifi_networks[idx].ssid));
+    }
+    if (password && password[0] != '\0') {
+        strlcpy(settings->wifi_networks[idx].password, password,
+                sizeof(settings->wifi_networks[idx].password));
+    }
+    strlcpy(settings->wifi_ssid, settings->wifi_networks[idx].ssid, sizeof(settings->wifi_ssid));
+    strlcpy(settings->wifi_password, settings->wifi_networks[idx].password,
+            sizeof(settings->wifi_password));
+    return true;
+}
+
+void settings_wifi_sync_primary(device_settings_t *settings)
+{
+    if (!settings || settings->wifi_ssid[0] == '\0') {
+        return;
+    }
+    (void)settings_wifi_upsert(settings, settings->wifi_ssid, settings->wifi_password);
+}
+
+bool settings_wifi_remove(device_settings_t *settings, const char *ssid)
+{
+    int idx = settings_wifi_find_index(settings, ssid);
+    if (idx < 0) {
+        return false;
+    }
+    for (uint8_t i = (uint8_t)idx; i + 1 < settings->wifi_network_count; i++) {
+        settings->wifi_networks[i] = settings->wifi_networks[i + 1];
+    }
+    settings->wifi_network_count--;
+    memset(&settings->wifi_networks[settings->wifi_network_count], 0,
+           sizeof(settings->wifi_networks[0]));
+    if (strncmp(settings->wifi_ssid, ssid, SETTINGS_WIFI_SSID_MAX_LENGTH) == 0) {
+        if (settings->wifi_network_count > 0) {
+            strlcpy(settings->wifi_ssid, settings->wifi_networks[0].ssid, sizeof(settings->wifi_ssid));
+            strlcpy(settings->wifi_password, settings->wifi_networks[0].password,
+                    sizeof(settings->wifi_password));
+        } else {
+            settings->wifi_ssid[0] = '\0';
+            settings->wifi_password[0] = '\0';
+        }
+    }
+    return true;
+}
+
+const char *settings_wifi_password_for(const device_settings_t *settings, const char *ssid)
+{
+    int idx = settings_wifi_find_index(settings, ssid);
+    if (idx < 0) {
+        return NULL;
+    }
+    return settings->wifi_networks[idx].password;
+}
+
+void settings_wifi_set_preferred(device_settings_t *settings, const char *ssid)
+{
+    if (!settings || !ssid || ssid[0] == '\0') {
+        return;
+    }
+    int idx = settings_wifi_find_index(settings, ssid);
+    if (idx < 0) {
+        return;
+    }
+    strlcpy(settings->wifi_ssid, settings->wifi_networks[idx].ssid, sizeof(settings->wifi_ssid));
+    strlcpy(settings->wifi_password, settings->wifi_networks[idx].password,
+            sizeof(settings->wifi_password));
+}
+
+static void settings_wifi_load_blob(nvs_handle_t handle, device_settings_t *settings)
+{
+    settings_wifi_nets_blob_t blob;
+    size_t len = sizeof(blob);
+    memset(&blob, 0, sizeof(blob));
+    if (nvs_get_blob(handle, KEY_WIFI_NETS, &blob, &len) != ESP_OK || len < 1) {
+        return;
+    }
+    if (blob.count > SETTINGS_WIFI_NETWORK_MAX) {
+        blob.count = SETTINGS_WIFI_NETWORK_MAX;
+    }
+    settings->wifi_network_count = 0;
+    for (uint8_t i = 0; i < blob.count; i++) {
+        if (blob.nets[i].ssid[0] == '\0') {
+            continue;
+        }
+        uint8_t dst = settings->wifi_network_count;
+        strlcpy(settings->wifi_networks[dst].ssid, blob.nets[i].ssid,
+                sizeof(settings->wifi_networks[dst].ssid));
+        strlcpy(settings->wifi_networks[dst].password, blob.nets[i].password,
+                sizeof(settings->wifi_networks[dst].password));
+        settings->wifi_network_count++;
+    }
+}
+
+static esp_err_t settings_wifi_save_blob(nvs_handle_t handle, const device_settings_t *settings)
+{
+    settings_wifi_nets_blob_t blob;
+    memset(&blob, 0, sizeof(blob));
+    blob.count = settings->wifi_network_count;
+    if (blob.count > SETTINGS_WIFI_NETWORK_MAX) {
+        blob.count = SETTINGS_WIFI_NETWORK_MAX;
+    }
+    for (uint8_t i = 0; i < blob.count; i++) {
+        strlcpy(blob.nets[i].ssid, settings->wifi_networks[i].ssid, sizeof(blob.nets[i].ssid));
+        strlcpy(blob.nets[i].password, settings->wifi_networks[i].password,
+                sizeof(blob.nets[i].password));
+    }
+    return nvs_set_blob(handle, KEY_WIFI_NETS, &blob, sizeof(blob));
+}
 
 /** Populate a `device_settings_t` with safe defaults. */
 void settings_defaults(device_settings_t *settings)
@@ -50,6 +196,7 @@ void settings_defaults(device_settings_t *settings)
     strlcpy(settings->keyboard_layout, "u", sizeof(settings->keyboard_layout));
     settings->wifi_ssid[0] = '\0';
     settings->wifi_password[0] = '\0';
+    settings->wifi_network_count = 0;
     settings->wifi_dhcp = true;
     settings->wifi_ip[0] = '\0';
     settings->wifi_netmask[0] = '\0';
@@ -141,14 +288,15 @@ esp_err_t settings_load(device_settings_t *settings)
         return result;
     }
 
-    /* Version check with migration from v2/v3/v4 → v5. */
+    /* Version check with migration from v2..v6 → v7. */
     uint8_t version = 0;
     result = nvs_get_u8(handle, KEY_VERSION, &version);
     if (result != ESP_OK) {
         nvs_close(handle);
         return ESP_OK;
     }
-    if (version != SETTINGS_VERSION && version != 2 && version != 3 && version != 4 && version != 5) {
+    if (version != SETTINGS_VERSION && version != 2 && version != 3 && version != 4 && version != 5 &&
+        version != 6) {
         nvs_close(handle);
         return ESP_OK;
     }
@@ -186,6 +334,12 @@ esp_err_t settings_load(device_settings_t *settings)
         settings->auto_cloud_sync_after_backup = auto_cloud != 0;
     }
 
+    if (version >= 7) {
+        settings_wifi_load_blob(handle, settings);
+    }
+    /* Seed the multi-network list from the legacy primary SSID when needed. */
+    settings_wifi_sync_primary(settings);
+
     settings_apply_hotspot_defaults(settings);
     nvs_close(handle);
     return ESP_OK;
@@ -214,6 +368,11 @@ esp_err_t settings_save(const device_settings_t *settings)
     if (result == ESP_OK) result = nvs_set_str(handle, KEY_DEVICE_NAME, settings->device_name);
     if (result == ESP_OK) result = nvs_set_str(handle, KEY_WIFI_SSID, settings->wifi_ssid);
     if (result == ESP_OK) result = nvs_set_str(handle, KEY_WIFI_PASSWORD, settings->wifi_password);
+    if (result == ESP_OK) {
+        device_settings_t tmp = *settings;
+        settings_wifi_sync_primary(&tmp);
+        result = settings_wifi_save_blob(handle, &tmp);
+    }
     if (result == ESP_OK) result = nvs_set_u8(handle, KEY_WIFI_DHCP, settings->wifi_dhcp ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_str(handle, KEY_WIFI_IP, settings->wifi_ip);
     if (result == ESP_OK) result = nvs_set_str(handle, KEY_WIFI_NETMASK, settings->wifi_netmask);

@@ -67,6 +67,20 @@ uint32_t self_test_run(void)
         log_buffer_appendf("self_test: auth login skipped");
     }
 
+    /* Backup storage round-trip (SPIFFS or SD) — same path autobackup/Hammer use */
+    {
+        char detail[128];
+        esp_err_t probe = file_manager_probe_backup_storage(detail, sizeof(detail));
+        expect_true("backup storage probe", probe == ESP_OK);
+        if (probe == ESP_OK) {
+            ESP_LOGI(TAG, "storage probe: %s", detail);
+            log_buffer_appendf("self_test: storage %s", detail);
+        } else {
+            ESP_LOGE(TAG, "storage probe failed: %s", detail[0] ? detail : esp_err_to_name(probe));
+            log_buffer_appendf("self_test: storage FAIL %s", detail[0] ? detail : esp_err_to_name(probe));
+        }
+    }
+
     if (s_failures == 0) {
         ESP_LOGI(TAG, "Boot self-test passed");
         log_buffer_appendf("self_test: all checks passed");

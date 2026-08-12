@@ -18,3 +18,18 @@ bool neo_import_text_is_blank(const char *text, size_t text_len)
     }
     return true;
 }
+
+bool neo_import_neo_raw_is_empty(const uint8_t *raw, size_t raw_len)
+{
+    if (!raw || raw_len == 0) {
+        return true;
+    }
+    for (size_t i = 0; i < raw_len; i++) {
+        uint8_t b = raw[i];
+        /* AlphaWord pads unused space with 0xa7 (NeoTools); 0xa4 also unused. */
+        if (b != 0xa7 && b != 0xa4 && b != 0x00) {
+            return false;
+        }
+    }
+    return true;
+}

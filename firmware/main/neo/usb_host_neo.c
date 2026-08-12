@@ -30,6 +30,9 @@
 #include "neo_debug.h"
 #include "neo_usb_hid.h"
 #include "neo_autobackup.h"
+#if CONFIG_BUDDY_NEO_LINK
+#include "neo_link_applet.h"
+#endif
 #include "board_config.h"
 #if HAVE_OLED
 #include "display.h"
@@ -2458,10 +2461,20 @@ esp_err_t usb_host_neo_inspect_applet(const uint8_t *content, size_t length, cha
     if (err != ESP_OK) {
         return err;
     }
+    char safe_name[40];
+    size_t o = 0;
+    for (size_t i = 0; info.name[i] != '\0' && o + 1 < sizeof(safe_name); i++) {
+        unsigned char c = (unsigned char)info.name[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == ' ' || c == '.') {
+            safe_name[o++] = (char)c;
+        }
+    }
+    safe_name[o] = '\0';
     snprintf(out_json, out_size,
-             "{\"applet_id\":%u,\"name\":\"%.36s\",\"rom_size\":%lu,\"ram_size\":%lu,\"file_count\":%u,"
+             "{\"applet_id\":%u,\"name\":\"%s\",\"rom_size\":%lu,\"ram_size\":%lu,\"file_count\":%u,"
              "\"version\":\"%u.%u.%u\",\"file_space\":%lu}",
-             info.applet_id, info.name, (unsigned long)info.rom_size, (unsigned long)info.ram_size, info.file_count,
+             info.applet_id, safe_name, (unsigned long)info.rom_size, (unsigned long)info.ram_size, info.file_count,
              info.version_major, info.version_minor, info.version_revision, (unsigned long)info.file_space);
     return ESP_OK;
 }

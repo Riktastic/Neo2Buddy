@@ -10,13 +10,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include "neo_applet.h"
+#include "neo_conv.h"
 #include "neo_debug.h"
 #include "neo_device.h"
+#include "neo_import.h"
 #include "neo_message.h"
 #include "neo_space.h"
 #include "usb_host_neo.h"
 #include "esp_log.h"
 #include <inttypes.h>
+#include <stdbool.h>
 
 static const char *TAG = "neo_file";
 static const uint8_t s_file_space_codes[] = {0xff, 0x2d, 0x2c, 0x04, 0x0f, 0x0e, 0x0a, 0x01, 0x27};
@@ -215,6 +218,7 @@ esp_err_t neo_file_read_alloc(uint16_t applet_id, uint8_t file_index, neo_file_a
     }
     ESP_LOGI(TAG, "File attr %s alloc=%" PRIu32 " min=%" PRIu32, attrs.name, attrs.alloc_size, attrs.min_size);
 
+    /* NeoTools: empty after clear has alloc_size==0. min_size is the reserve floor. */
     if (attrs.alloc_size == 0) {
         neo_device_dialogue_end();
         neo_device_unlock();
@@ -272,10 +276,46 @@ esp_err_t neo_file_read_raw(uint16_t applet_id, uint8_t file_index, uint8_t *buf
     neo_file_attr_from_raw(file_index, attr_buf, &attrs);
     ESP_LOGI(TAG, "File attr %s alloc=%" PRIu32 " min=%" PRIu32, attrs.name, attrs.alloc_size, attrs.min_size);
 
+    if (attrs.alloc_size == 0) {
+        neo_device_dialogue_end();
+        neo_device_unlock();
+        return ESP_OK;
+    }
+
+    /* NeoTools raw_read_file always requests alloc_size (not min_size). */
     err = neo_file_send_read_raw_open(applet_id, file_index, attrs.alloc_size, buffer, capacity, out_length);
     neo_device_dialogue_end();
     neo_device_unlock();
     return err;
+}
+
+/** Trailing AlphaWord pad / unused bytes (NeoTools pads with 0xa7; cleared slots may be 0x00). */
+static size_t neo_file_raw_payload_len(const uint8_t *buf, size_t len)
+{
+    while (len > 0 && (buf[len - 1] == 0xa7 || buf[len - 1] == 0xa4 || buf[len - 1] == 0x00)) {
+        len--;
+    }
+    return len;
+}
+
+/**
+ * Bytes of user-visible text for list/UI. Pad-only / control-only slots report 0
+ * so the portal can hide "empty" 512 B AlphaWord reserves (Read already shows empty).
+ */
+static size_t neo_file_used_text_len(const uint8_t *raw, size_t raw_len)
+{
+    if (!raw || raw_len == 0 || neo_import_neo_raw_is_empty(raw, raw_len)) {
+        return 0;
+    }
+    size_t text_cap = neo_conv_export_buf_size(raw_len);
+    char *text = malloc(text_cap);
+    if (!text) {
+        return neo_file_raw_payload_len(raw, raw_len);
+    }
+    size_t text_len = neo_conv_export_text_from_neo(raw, raw_len, text, text_cap, NEO_CHARMAP_EN_US);
+    bool blank = (text_len == 0) || neo_import_text_is_blank(text, text_len);
+    free(text);
+    return blank ? 0 : text_len;
 }
 
 esp_err_t neo_file_write_raw(uint16_t applet_id, uint8_t file_index, const uint8_t *data, size_t length)
@@ -289,6 +329,48 @@ esp_err_t neo_file_write_raw(uint16_t applet_id, uint8_t file_index, const uint8
         neo_device_unlock();
         return err;
     }
+    err = neo_file_send_write_raw(applet_id, file_index, data, length);
+    neo_device_dialogue_end();
+    neo_device_unlock();
+    return err;
+}
+
+esp_err_t neo_file_write_raw_resize(uint16_t applet_id, uint8_t file_index, const uint8_t *data, size_t length)
+{
+    if (!data && length != 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    neo_device_lock();
+    esp_err_t err = neo_file_dialogue_start();
+    if (err != ESP_OK) {
+        neo_device_unlock();
+        return err;
+    }
+
+    uint8_t attr_buf[NEO_FILE_ATTR_SIZE];
+    err = neo_device_get_file_attributes_open(applet_id, file_index, attr_buf, sizeof(attr_buf));
+    if (err != ESP_OK) {
+        neo_device_dialogue_end();
+        neo_device_unlock();
+        return err;
+    }
+
+    neo_file_attr_t attrs;
+    neo_file_attr_from_raw(file_index, attr_buf, &attrs);
+    if (attrs.alloc_size < (uint32_t)length || attrs.min_size < (uint32_t)length) {
+        attrs.alloc_size = (uint32_t)length;
+        attrs.min_size = (uint32_t)length;
+        err = neo_file_raw_set_attributes(applet_id, file_index, &attrs);
+        if (err == ESP_OK) {
+            err = neo_file_send_commit(applet_id, file_index);
+        }
+        if (err != ESP_OK) {
+            neo_device_dialogue_end();
+            neo_device_unlock();
+            return err;
+        }
+    }
+
     err = neo_file_send_write_raw(applet_id, file_index, data, length);
     neo_device_dialogue_end();
     neo_device_unlock();
@@ -379,14 +461,19 @@ esp_err_t neo_file_create(uint16_t applet_id, const char *name, const char *pass
     return err;
 }
 
-static int neo_file_cmp_attr(const void *a, const void *b)
+typedef struct {
+    neo_file_attr_t attr;
+    size_t used_size;
+} neo_file_list_entry_t;
+
+static int neo_file_cmp_list_entry(const void *a, const void *b)
 {
-    const neo_file_attr_t *fa = a;
-    const neo_file_attr_t *fb = b;
-    if (fa->space_number != fb->space_number) {
-        return fa->space_number - fb->space_number;
+    const neo_file_list_entry_t *fa = a;
+    const neo_file_list_entry_t *fb = b;
+    if (fa->attr.space_number != fb->attr.space_number) {
+        return fa->attr.space_number - fb->attr.space_number;
     }
-    return strcmp(fa->name, fb->name);
+    return strcmp(fa->attr.name, fb->attr.name);
 }
 
 esp_err_t neo_file_list_applet(uint16_t applet_id, cJSON *files)
@@ -394,7 +481,7 @@ esp_err_t neo_file_list_applet(uint16_t applet_id, cJSON *files)
     if (!files) {
         return ESP_ERR_INVALID_ARG;
     }
-    neo_file_attr_t *listed = calloc(32, sizeof(*listed));
+    neo_file_list_entry_t *listed = calloc(32, sizeof(*listed));
     if (!listed) {
         return ESP_ERR_NO_MEM;
     }
@@ -421,14 +508,38 @@ esp_err_t neo_file_list_applet(uint16_t applet_id, cJSON *files)
             free(listed);
             return err;
         }
-        neo_file_attr_from_raw(index, attr_buf, &listed[count]);
+        neo_file_attr_from_raw(index, attr_buf, &listed[count].attr);
+        listed[count].used_size = 0;
+
+        /* NeoTools: min_size is reserve floor; used text needs a payload peek. */
+        uint32_t alloc = listed[count].attr.alloc_size;
+        if (alloc > 0 && alloc <= (256 * 1024)) {
+            uint8_t *raw = malloc(alloc);
+            if (raw) {
+                size_t got = 0;
+                esp_err_t read_err =
+                    neo_file_send_read_raw_open(applet_id, index, alloc, raw, alloc, &got);
+                if (read_err == ESP_OK) {
+                    /* Match Read/backup semantics: pad-only and export-blank → 0. */
+                    listed[count].used_size = neo_file_used_text_len(raw, got);
+                } else {
+                    ESP_LOGW(TAG, "list used_size peek failed index=%u: %s", index,
+                             esp_err_to_name(read_err));
+                    /* Do not report alloc as "used" — that made empty 512 B slots look full. */
+                    listed[count].used_size = 0;
+                }
+                free(raw);
+            } else {
+                listed[count].used_size = 0;
+            }
+        }
         count++;
     }
     neo_device_dialogue_end();
     neo_device_unlock();
 
     if (count > 1) {
-        qsort(listed, count, sizeof(listed[0]), neo_file_cmp_attr);
+        qsort(listed, count, sizeof(listed[0]), neo_file_cmp_list_entry);
     }
     for (size_t i = 0; i < count; i++) {
         cJSON *item = cJSON_CreateObject();
@@ -436,14 +547,16 @@ esp_err_t neo_file_list_applet(uint16_t applet_id, cJSON *files)
             free(listed);
             return ESP_ERR_NO_MEM;
         }
-        cJSON_AddStringToObject(item, "name", listed[i].name);
+        const neo_file_attr_t *a = &listed[i].attr;
+        cJSON_AddStringToObject(item, "name", a->name);
         cJSON_AddNumberToObject(item, "applet_id", applet_id);
-        cJSON_AddNumberToObject(item, "file_index", listed[i].file_index);
-        cJSON_AddNumberToObject(item, "index", listed[i].file_index);
-        cJSON_AddNumberToObject(item, "alloc_size", listed[i].alloc_size);
-        cJSON_AddNumberToObject(item, "min_size", listed[i].min_size);
-        cJSON_AddNumberToObject(item, "space", listed[i].space_number);
-        cJSON_AddNumberToObject(item, "flags", listed[i].flags);
+        cJSON_AddNumberToObject(item, "file_index", a->file_index);
+        cJSON_AddNumberToObject(item, "index", a->file_index);
+        cJSON_AddNumberToObject(item, "alloc_size", a->alloc_size);
+        cJSON_AddNumberToObject(item, "min_size", a->min_size);
+        cJSON_AddNumberToObject(item, "used_size", (double)listed[i].used_size);
+        cJSON_AddNumberToObject(item, "space", a->space_number);
+        cJSON_AddNumberToObject(item, "flags", a->flags);
         cJSON_AddItemToArray(files, item);
     }
     free(listed);

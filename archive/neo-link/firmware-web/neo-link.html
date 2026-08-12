@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="application-name" content="Neo2 Buddy Portal">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f0e8">
+  <title>Neo Link — Neo2 Buddy</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/portal.css">
+</head>
+<body data-page="neo-link">
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="app-name">Neo2 Buddy Portal</p>
+        <h1 id="header-device-name">Neo Link</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <nav class="portal-nav" aria-label="Portal sections">
+          <a class="portal-nav-link" href="index.html">Documents</a>
+          <a class="portal-nav-link" href="typing.html">Typing &amp; Bluetooth</a>
+          <a class="portal-nav-link is-active" href="neo-link.html" aria-current="page">Neo Link</a>
+        </nav>
+        <div class="status-chip"><span class="dot" aria-hidden="true"></span><span id="connection">Looking for device</span></div>
+        <button id="logs-button" class="icon-button" type="button" title="View logs" aria-label="View logs" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 19V6.2C4 5.0799 4 4.51984 4.21799 4.09202C4.40973 3.71569 4.71569 3.40973 5.09202 3.21799C5.51984 3 6.0799 3 7.2 3H16.8C17.9201 3 18.4802 3 18.908 3.21799C19.2843 3.40973 19.5903 3.71569 19.782 4.09202C20 4.51984 20 5.0799 20 6.2V17H6C4.89543 17 4 17.8954 4 19ZM4 19C4 20.1046 4.89543 21 6 21H20M9 7H15M9 11H15M19 17V21" stroke="#000000" stroke-width="2"/></svg>
+          <span class="visually-hidden">Logs</span>
+        </button>
+        <button id="settings-button" class="icon-button" type="button" data-action="settings" title="Device settings" aria-label="Device settings" hidden><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M30.015 12.97l-2.567-0.569c-0.2-0.64-0.462-1.252-0.762-1.841l1.389-2.313c0.518-0.829 0.78-2.047 0-2.829l-1.415-1.414c-0.78-0.781-2.098-0.64-2.894-0.088l-2.251 1.434c-0.584-0.303-1.195-0.563-1.829-0.768l-0.576-2.598c-0.172-0.953-1.005-1.984-2.11-1.984h-2c-1.104 0-1.781 1.047-2 2l-0.642 2.567c-0.678 0.216-1.328 0.492-1.948 0.819l-2.308-1.47c-0.795-0.552-2.114-0.692-2.894 0.088l-1.415 1.414c-0.781 0.782-0.519 2 0 2.828l1.461 2.435c-0.274 0.552-0.517 1.123-0.705 1.72l-2.566 0.569c-0.953 0.171-1.984 1.005-1.984 2.109v2c0 1.105 1.047 1.782 2 2l2.598 0.649c0.179 0.551 0.404 1.080 0.658 1.593l-1.462 2.438c-0.518 0.828-0.78 2.047 0 2.828l1.415 1.414c0.78 0.782 2.098 0.64 2.894 0.089l2.313-1.474c0.623 0.329 1.277 0.608 1.96 0.823l0.64 2.559c0.219 0.953 0.896 2 2 2h2c1.105 0 1.938-1.032 2.11-1.985l0.577-2.604c0.628-0.203 1.23-0.459 1.808-0.758l2.256 1.438c0.796 0.552 2.114 0.692 2.895-0.089l1.415-1.414c0.78-0.782 0.518-2 0-2.828l-1.39-2.317c0.279-0.549 0.521-1.12 0.716-1.714l2.599-0.649c0.953-0.219 2-0.895 2-2v-2c0-1.104-1.031-1.938-1.985-2.11z"></path></svg></button>
+        <button id="login-btn" class="button" type="button">Sign In</button>
+      </div>
+    </header>
+
+    <section class="hero typing-hero" aria-labelledby="link-heading">
+      <div>
+        <p class="eyebrow">SEPARATE APPLET</p>
+        <h2 id="link-heading">Ask GPT from<br><em>Neo Link Chat — not AlphaWord.</em></h2>
+        <p class="typing-lead">This page configures the buddy LLM proxy and tests the Neo Link Chat applet mailboxes. AlphaWord documents and backups are unchanged.</p>
+      </div>
+    </section>
+
+    <div id="portal-notices" class="portal-notices" hidden aria-live="polite"></div>
+
+    <section class="stat-grid typing-stat-grid" aria-label="Neo Link status">
+      <article class="stat-card neo-card"><span class="label">LLM</span><strong id="link-llm-state">—</strong><small id="link-llm-detail">Sign in to load config</small></article>
+      <article class="stat-card neo-card"><span class="label">Mailbox</span><strong id="link-mailbox-state">—</strong><small id="link-mailbox-detail">Last ASM write</small></article>
+      <article class="stat-card neo-card"><span class="label">Context</span><strong id="link-context-state">—</strong><small id="link-context-detail">Prior turns kept on buddy</small></article>
+    </section>
+
+    <section class="workspace typing-workspace">
+      <section class="workspace">
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">LLM CONFIG</p><h2>OpenAI-compatible endpoint</h2></div>
+          </div>
+          <form id="link-llm-form" class="settings-section" style="display:grid;gap:12px;padding:0 4px 8px">
+            <label class="toggle-row"><span><b>Enable Neo Link LLM</b><small>When off, prompts echo back without calling an API.</small></span><input id="link-enabled" type="checkbox"><span class="toggle-track" aria-hidden="true"></span></label>
+            <label>Base URL<small>e.g. https://api.openai.com/v1 or http://192.168.1.10:11434/v1</small><input id="link-base-url" type="url" placeholder="https://api.openai.com/v1" autocomplete="url"></label>
+            <label>API key<small>Leave blank to keep the saved key. Enter empty and save after clearing… use Clear key.</small><input id="link-api-key" type="password" autocomplete="off" placeholder="sk-… (not shown after save)"></label>
+            <p class="field-hint" id="link-key-hint" hidden></p>
+            <label>Model<small>gpt-5-nano / gpt-5-mini / gpt-4.1-mini / gpt-4o-mini (OpenAI); any Ollama tag locally</small><input id="link-model" type="text" maxlength="64" placeholder="gpt-5-nano"></label>
+            <label>System prompt<textarea id="link-system" rows="3" maxlength="256"></textarea></label>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+              <label>Max tokens<input id="link-max-tokens" type="number" min="50" max="800" value="450"></label>
+              <label>Max req/min<input id="link-max-rpm" type="number" min="1" max="30" value="6"></label>
+              <label>Context turns<input id="link-context-turns" type="number" min="0" max="2" value="2"></label>
+            </div>
+            <div class="dialog-actions" style="justify-content:flex-start;flex-wrap:wrap;gap:8px">
+              <button class="button primary" type="submit" id="link-save">Save</button>
+              <button class="button" type="button" id="link-test">Test API</button>
+              <button class="button" type="button" id="link-clear-key">Clear key</button>
+              <button class="button" type="button" id="link-clear-context">Clear chat context</button>
+            </div>
+            <p class="dialog-status" id="link-form-status" aria-live="polite"></p>
+          </form>
+        </article>
+      </section>
+
+      <aside class="panel quick-panel typing-quick-panel">
+        <p class="eyebrow">ON THE NEO</p>
+        <h2>Install Neo Link Chat</h2>
+        <div class="action-list">
+          <button class="action-row" type="button" id="link-install-applet">
+            <span class="action-icon green" aria-hidden="true">↓</span>
+            <span><b>Install bundled applet</b><small id="link-install-detail">NeoLinkChat.OS3KApp (0xA1C0) — Neo must be connected</small></span><i>›</i>
+          </button>
+        </div>
+        <p class="file-size-guidance" style="margin-top:14px">After install: power Neo off, hold <b>Left Shift + Tab</b>, power on, choose <b>Neo Link Chat</b>.</p>
+
+        <p class="eyebrow" style="margin-top:1.5rem">HARDWARE CHECK</p>
+        <h2>Prove the three paths</h2>
+        <div class="action-list">
+          <button class="action-row" type="button" id="link-path-send">
+            <span class="action-icon blue" aria-hidden="true">1</span>
+            <span><b>Send test reply → Neo</b><small>Writes NeoLinkIn; press Find on the applet</small></span><i>›</i>
+          </button>
+          <button class="action-row" type="button" id="link-path-pull">
+            <span class="action-icon blue" aria-hidden="true">2</span>
+            <span><b>Fetch prompt from Neo &amp; reply</b><small>Reads NeoLinkOut, calls GPT, writes NeoLinkIn</small></span><i>›</i>
+          </button>
+          <button class="action-row" type="button" id="link-refresh-status">
+            <span class="action-icon blue" aria-hidden="true">↻</span>
+            <span><b>Refresh status</b><small>LLM readiness, mailbox, last prompt/reply</small></span><i>›</i>
+          </button>
+        </div>
+        <p class="file-size-guidance" style="margin-top:14px">Path 3 (HID auto) is validated on the Neo itself: Send in Neo Link Chat and wait for an automatic reply without using this page.</p>
+        <div style="margin-top:12px">
+          <p class="eyebrow">LAST EXCHANGE</p>
+          <pre id="link-last-box" class="document-preview" style="min-height:6rem;white-space:pre-wrap">Sign in to load.</pre>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <footer class="portal-footer">
+    <div class="portal-footer-inner">
+      <div class="footer-left"><span id="footer-app-name">Neo2 Buddy Portal</span> <span id="footer-version">v0.9.0-beta</span></div>
+      <div class="footer-right">
+        <a href="index.html">Documents</a>
+        <a href="typing.html">Typing</a>
+        <a href="/user-guide.html">User guide</a>
+      </div>
+    </div>
+  </footer>
+
+  <dialog id="action-dialog"><form method="dialog" id="action-dialog-form"><button class="close" type="button" id="action-dialog-close" aria-label="Close">×</button><p class="eyebrow" id="dialog-label">ACTION</p><h2 id="dialog-title">Not connected</h2><p id="dialog-copy"></p><div id="dialog-actions-default"><button class="button primary" type="submit">Done</button></div></form></dialog>
+  <dialog id="settings-dialog" class="settings-dialog"><form id="settings-form"><div class="dialog-heading settings-heading"><div><p class="eyebrow">DEVICE SETTINGS</p><h2>Make it feel like yours.</h2></div><button class="close-dialog" id="settings-close" type="button" aria-label="Close">&times;</button></div><p class="settings-note">Open settings from Documents or Typing for the full panel. This page focuses on Neo Link.</p><div class="dialog-actions"><button class="button" type="button" id="settings-close-2">Close</button></div></form></dialog>
+  <dialog id="logs-dialog" class="logs-dialog" aria-labelledby="logs-dialog-title"><div class="dialog-heading"><div><p class="eyebrow">DEVICE</p><h2 id="logs-dialog-title">Logs</h2></div><button class="close-dialog" id="logs-close" type="button" aria-label="Close">&times;</button></div><div class="logs-list" id="logs-list"><p class="logs-empty">No logs yet</p></div></dialog>
+  <dialog id="login-dialog" class="login-dialog">
+    <form id="login-form">
+      <div class="login-intro"><span class="login-mark" aria-hidden="true">N</span><p class="eyebrow">LOCAL DEVICE ACCESS</p><h2>Welcome back.</h2><p>Sign in to configure Neo Link LLM settings.</p></div>
+      <label class="login-field">Portal password<input id="login-password" type="password" autocomplete="current-password" required></label>
+      <p class="login-error" id="login-error" role="alert" hidden></p>
+      <button id="login-submit" class="button primary login-submit">Sign in</button>
+      <div class="login-footer"><button type="button" id="login-cancel" class="text-button">Cancel</button></div>
+    </form>
+  </dialog>
+
+  <script>
+  (function () {
+    var list = ['js/core.js', 'js/neo-link.js'];
+    if (/\.github\.io$/i.test(location.hostname) || /[?&]demo=1(?:&|$)/.test(location.search)) {
+      list.unshift('js/demo.js');
+    }
+    var n = 0;
+    function next() {
+      if (n >= list.length) return;
+      var s = document.createElement('script');
+      s.src = list[n++];
+      s.onload = s.onerror = next;
+      document.body.appendChild(s);
+    }
+    next();
+  })();
+  </script>
+</body>
+</html>

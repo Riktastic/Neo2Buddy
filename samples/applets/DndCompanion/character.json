@@ -1,0 +1,32 @@
+{
+  "name": "Arannis",
+  "class": "Wizard",
+  "level": 5,
+  "hp": 28,
+  "hp_max": 32,
+  "ac": 13,
+  "stats": {
+    "str": 8,
+    "dex": 14,
+    "con": 12,
+    "int": 18,
+    "wis": 10,
+    "cha": 13
+  },
+  "weapons": [
+    { "name": "Quarterstaff", "dmg": "1d6" },
+    { "name": "Dagger", "dmg": "1d4+2" }
+  ],
+  "spells": [
+    { "name": "Fire Bolt", "level": 0, "prepared": true },
+    { "name": "Mage Hand", "level": 0, "prepared": true },
+    { "name": "Prestidigitation", "level": 0, "prepared": false },
+    { "name": "Magic Missile", "level": 1, "prepared": true },
+    { "name": "Shield", "level": 1, "prepared": true },
+    { "name": "Detect Magic", "level": 1, "prepared": false },
+    { "name": "Misty Step", "level": 2, "prepared": true },
+    { "name": "Scorching Ray", "level": 2, "prepared": true },
+    { "name": "Counterspell", "level": 3, "prepared": true },
+    { "name": "Fireball", "level": 3, "prepared": true }
+  ]
+}

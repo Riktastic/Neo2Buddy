@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
 
 #include "auth.h"
 #include "board_config.h"
@@ -28,7 +29,9 @@
 #include "esp_spiffs.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#if HAVE_WIFI_WEB
 #include "esp_wifi.h"
+#endif
 #include "file_manager.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -55,6 +58,12 @@
 #if HAVE_SDCARD
 #include "sd_card.h"
 #include "sd_format.h"
+#endif
+#if CONFIG_BUDDY_NEO_LINK
+#include "neo_link_llm.h"
+#include "neo_link_applet.h"
+#include "neo_link_limits.h"
+#include "usb_host_neo.h"
 #endif
 
 static const char *TAG = "uart_cmd";
@@ -487,6 +496,8 @@ static int cmd_neo_version(int argc, char **argv);
 static int cmd_neo_rescan(int argc, char **argv);
 static int cmd_neo_restart(int argc, char **argv);
 static int cmd_neo_list_applets(int argc, char **argv);
+static int cmd_neo_fetch_applet(int argc, char **argv);
+static void uart_print_json_escaped(const char *s);
 static int cmd_neo_list_files(int argc, char **argv);
 static int cmd_neo_file_attrs(int argc, char **argv);
 static int cmd_neo_read_file(int argc, char **argv);
@@ -519,6 +530,7 @@ static int cmd_device_reboot(int argc, char **argv);
 static int cmd_device_factory_reset(int argc, char **argv);
 static int cmd_files(int argc, char **argv);
 static int cmd_files_list(int argc, char **argv);
+static int cmd_files_probe(int argc, char **argv);
 static int cmd_files_view(int argc, char **argv);
 static int cmd_files_delete(int argc, char **argv);
 static int cmd_files_rename(int argc, char **argv);
@@ -526,6 +538,13 @@ static int cmd_keyboard(int argc, char **argv);
 static int cmd_keyboard_recent(int argc, char **argv);
 static int cmd_keyboard_clear(int argc, char **argv);
 static int cmd_keyboard_raw(int argc, char **argv);
+static int cmd_keyboard_keylog(int argc, char **argv);
+#if CONFIG_BUDDY_NEO_LINK
+static int cmd_link(int argc, char **argv);
+static int cmd_link_llm(int argc, char **argv);
+static int cmd_link_install(int argc, char **argv);
+static int cmd_link_verify(int argc, char **argv);
+#endif
 static int cmd_ping(int argc, char **argv);
 
 static const char *device_reset_reason_str(esp_reset_reason_t reason)
@@ -730,6 +749,18 @@ static const uart_cmd_entry_t s_commands[] = {
         .auth_required = true,
         .hint = NULL,
         .func = cmd_neo_list_applets,
+    },
+    {
+        .command = "neo fetch-applet",
+        .summary = "download a SmartApplet package (NeoTools applets fetch)",
+        .usage = "neo fetch-applet APPLET_ID [FILENAME]",
+        .description = "Fetches the on-device ROM package via REQUEST_READ_APPLET (same as NeoTools "
+                       "`applets fetch`). Writes a .os3kapp (or SystemRom.os3kos for id 0) under "
+                       "buddy storage. Validates C0FFEEAD/CAFEFEED for regular applets.",
+        .examples = "    neo fetch-applet 0xA007\n    neo fetch-applet 40967 ControlPanel.os3kapp\n    neo fetch-applet 0\n",
+        .auth_required = true,
+        .hint = "APPLET_ID [FILENAME]",
+        .func = cmd_neo_fetch_applet,
     },
     {
         .command = "neo list-files",
@@ -1019,12 +1050,15 @@ static const uart_cmd_entry_t s_commands[] = {
     {
         .command = "device ble",
         .summary = "Bluetooth keyboard bridge status and control",
-        .usage = "device ble [status|pair on|off|preview TEXT|send|cancel]",
+        .usage = "device ble [status|bonds|pair on|off|clear|preview TEXT|send|cancel]",
         .description = "Neo keys passthrough to the paired BLE host when connected. Bonds persist "
-                       "across reboot; pair on opens a 2-minute window for a new host. preview/send "
-                       "still types portal text to the host; cancel clears the queue.",
+                       "across reboot; bonds lists saved hosts; pair on opens a 2-minute window for "
+                       "a new host; clear forgets all bonded hosts. preview/send still types portal "
+                       "text to the host; cancel clears the queue.",
         .examples = "    device ble\n"
+                     "    device ble bonds\n"
                      "    device ble pair on\n"
+                     "    device ble clear\n"
                      "    device ble preview \"Hello from UART\"\n"
                      "    device ble send\n"
                      "    device ble cancel\n",
@@ -1088,8 +1122,8 @@ static const uart_cmd_entry_t s_commands[] = {
         .command = "files",
         .summary = "buddy-local backup file group",
         .usage = "files",
-        .description = "List, view, delete, or rename backup files on SD/SPIFFS storage.",
-        .examples = "    files\n    help files\n",
+        .description = "List, view, delete, rename, or probe backup files on SD/SPIFFS storage.",
+        .examples = "    files\n    files probe\n    help files\n",
         .auth_required = false,
         .hint = NULL,
         .func = cmd_files,
@@ -1103,6 +1137,17 @@ static const uart_cmd_entry_t s_commands[] = {
         .auth_required = true,
         .hint = NULL,
         .func = cmd_files_list,
+    },
+    {
+        .command = "files probe",
+        .summary = "verify backup storage read/write",
+        .usage = "files probe",
+        .description = "Writes a small probe file, lists it, reads it back, then deletes it. "
+                       "Use this to confirm SPIFFS/SD backup storage before relying on autobackup.",
+        .examples = "    files probe\n",
+        .auth_required = true,
+        .hint = NULL,
+        .func = cmd_files_probe,
     },
     {
         .command = "files view",
@@ -1138,7 +1183,7 @@ static const uart_cmd_entry_t s_commands[] = {
         .command = "keyboard",
         .summary = "live Neo typing buffer group",
         .usage = "keyboard",
-        .description = "Live keyboard monitor: recent text, clear buffer, or raw HID reports.",
+        .description = "Live keyboard monitor: recent text, clear buffer, raw HID, or keylog toggle.",
         .examples = "    keyboard\n    help keyboard\n",
         .auth_required = false,
         .hint = NULL,
@@ -1174,6 +1219,69 @@ static const uart_cmd_entry_t s_commands[] = {
         .hint = NULL,
         .func = cmd_keyboard_raw,
     },
+    {
+        .command = "keyboard keylog",
+        .summary = "enable/disable per-keystroke UART logging",
+        .usage = "keyboard keylog [on|off|status]",
+        .description = "Mirrors each decoded Neo keystroke to the serial console. Off by default "
+                       "because it is expensive while typing; use only for field debugging.",
+        .examples = "    keyboard keylog\n    keyboard keylog on\n    keyboard keylog off\n",
+        .auth_required = true,
+        .hint = "[on|off|status]",
+        .func = cmd_keyboard_keylog,
+    },
+#if CONFIG_BUDDY_NEO_LINK
+    {
+        .command = "link",
+        .summary = "Neo Link (LLM proxy) command group",
+        .usage = "link",
+        .description = "Lists Neo Link subcommands.",
+        .examples = "    link\n    help link\n",
+        .auth_required = false,
+        .hint = NULL,
+        .func = cmd_link,
+    },
+    {
+        .command = "link llm",
+        .summary = "configure or test the Neo Link LLM proxy",
+        .usage = "link llm [status|set KEY VALUE|test [PROMPT]|clear-context]",
+        .description = "NVS namespace neo_link (same as portal /api/v1/link/llm). set keys: enabled, "
+                       "base_url, api_key, model, system, max_tokens, max_rpm, context_turns. "
+                       "api_key is never printed; use set api_key \"\" to clear.",
+        .examples = "    link llm\n"
+                     "    link llm set enabled on\n"
+                     "    link llm set base_url https://api.openai.com/v1\n"
+                     "    link llm set api_key sk-...\n"
+                     "    link llm set model gpt-4o-mini\n"
+                     "    link llm test\n"
+                     "    link llm clear-context\n",
+        .auth_required = true,
+        .hint = "[SUBCOMMAND]",
+        .func = cmd_link_llm,
+    },
+    {
+        .command = "link install",
+        .summary = "install bundled BetaWise HelloWorld onto the Neo",
+        .usage = "link install [--no-replace]",
+        .description = "Pushes the firmware-embedded BetaWise HelloWorld.OS3KApp (id 0xA1A0) over USB. "
+                       "Requires a connected Neo. Replaces an existing 0xA1A0 install by default.",
+        .examples = "    link install\n    link install --no-replace\n",
+        .auth_required = true,
+        .hint = "[--no-replace]",
+        .func = cmd_link_install,
+    },
+    {
+        .command = "link verify",
+        .summary = "fetch installed applet from Neo and compare to bundled blob",
+        .usage = "link verify",
+        .description = "Reads applet 0xA1A0 from the Neo over USB and compares the first "
+                       "bundled-size bytes to the firmware-embedded .OS3KApp.",
+        .examples = "    link verify\n",
+        .auth_required = true,
+        .hint = NULL,
+        .func = cmd_link_verify,
+    },
+#endif
 };
 
 static const size_t s_command_count = sizeof(s_commands) / sizeof(s_commands[0]);
@@ -1288,7 +1396,7 @@ static void uart_print_overview_help(void)
         const uart_cmd_entry_t *e = &s_commands[i];
         if (strchr(e->command, ' ') != NULL || strcmp(e->command, "neo") == 0 ||
             strcmp(e->command, "device") == 0 || strcmp(e->command, "files") == 0 ||
-            strcmp(e->command, "keyboard") == 0) {
+            strcmp(e->command, "keyboard") == 0 || strcmp(e->command, "link") == 0) {
             continue;
         }
         printf("  %-18s %s\n", e->command, e->summary);
@@ -1330,7 +1438,22 @@ static void uart_print_overview_help(void)
         printf("  %-22s %s\n", e->command, e->summary);
     }
 
+#if CONFIG_BUDDY_NEO_LINK
+    printf("\nNeo Link (login required):\n");
+    for (size_t i = 0; i < s_command_count; ++i) {
+        const uart_cmd_entry_t *e = &s_commands[i];
+        if (strncmp(e->command, "link ", 5) != 0) {
+            continue;
+        }
+        printf("  %-22s %s\n", e->command, e->summary);
+    }
+#endif
+
+#if CONFIG_BUDDY_NEO_LINK
+    printf("\nType 'help COMMAND' for a manual page. Use 'neo', 'device', 'files', 'keyboard', or 'link'.\n");
+#else
     printf("\nType 'help COMMAND' for a manual page. Use 'neo', 'device', 'files', or 'keyboard'.\n");
+#endif
 }
 
 static void uart_print_topic_help(const char *topic)
@@ -1418,6 +1541,15 @@ static int cmd_keyboard(int argc, char **argv)
     char **sub_argv = argc > 1 ? argv + 1 : argv;
     return uart_dispatch_group("keyboard", sub_argc, sub_argv);
 }
+
+#if CONFIG_BUDDY_NEO_LINK
+static int cmd_link(int argc, char **argv)
+{
+    int sub_argc = argc > 1 ? argc - 1 : 0;
+    char **sub_argv = argc > 1 ? argv + 1 : argv;
+    return uart_dispatch_group("link", sub_argc, sub_argv);
+}
+#endif
 
 static int cmd_login(int argc, char **argv)
 {
@@ -1669,6 +1801,111 @@ static int cmd_neo_list_applets(int argc, char **argv)
         return 1;
     }
     return uart_print_alloc_json(uart_fill_neo_list_applets, NULL, UART_JSON_ALLOC_DEFAULT, "neo list-applets");
+}
+
+static int cmd_neo_fetch_applet(int argc, char **argv)
+{
+    if (uart_help_requested(argc, argv, "neo fetch-applet")) {
+        return 0;
+    }
+    if (!uart_require_auth(argc, argv)) {
+        return 1;
+    }
+    if (uart_neo_require() != ESP_OK) {
+        return 1;
+    }
+    if (argc < 1 || argv[0] == NULL) {
+        uart_print_usage("neo fetch-applet");
+        return 1;
+    }
+    uint16_t applet_id = 0;
+    if (!parse_u16(argv[0], &applet_id)) {
+        printf("neo fetch-applet: invalid applet id\n");
+        return 1;
+    }
+
+    const size_t cap = 1024 * 1024;
+    uint8_t *buf = malloc(cap);
+    if (!buf) {
+        printf("neo fetch-applet: out of memory\n");
+        return 1;
+    }
+    size_t out_len = 0;
+    esp_err_t err = usb_host_neo_fetch_applet(applet_id, buf, cap, &out_len);
+    if (err != ESP_OK) {
+        free(buf);
+        printf("neo fetch-applet: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+
+    char name[FILE_MANAGER_NAME_MAX];
+    name[0] = '\0';
+    if (argc >= 2 && argv[1] && argv[1][0]) {
+        snprintf(name, sizeof(name), "%s", argv[1]);
+    } else if (applet_id == 0) {
+        snprintf(name, sizeof(name), "SystemRom.os3kos");
+    } else {
+        neo_applet_info_t info;
+        if (neo_applet_inspect(buf, out_len, &info) == ESP_OK && info.name[0]) {
+            size_t o = 0;
+            for (size_t i = 0; info.name[i] && o + 12 < sizeof(name); i++) {
+                unsigned char c = (unsigned char)info.name[i];
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                    c == '-' || c == '_') {
+                    name[o++] = (char)c;
+                } else if (c == ' ' || c == '.') {
+                    name[o++] = '_';
+                }
+            }
+            name[o] = '\0';
+            if (o + 9 < sizeof(name)) {
+                memcpy(name + o, ".os3kapp", 9);
+            }
+        }
+        if (name[0] == '\0') {
+            snprintf(name, sizeof(name), "applet-%u.os3kapp", (unsigned)applet_id);
+        }
+    }
+
+    char path[320];
+    if (file_manager_ensure_dir() != ESP_OK) {
+        free(buf);
+        printf("neo fetch-applet: storage not ready\n");
+        return 1;
+    }
+    if (file_manager_resolve_path(name, path, sizeof(path)) != ESP_OK) {
+        free(buf);
+        printf("neo fetch-applet: invalid filename\n");
+        return 1;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (!fp) {
+        free(buf);
+        printf("neo fetch-applet: open failed %s\n", path);
+        return 1;
+    }
+    size_t wrote = fwrite(buf, 1, out_len, fp);
+    if (fflush(fp) != 0) {
+        wrote = 0;
+    }
+    fclose(fp);
+    free(buf);
+    if (wrote != out_len) {
+        unlink(path);
+        printf("neo fetch-applet: write failed\n");
+        return 1;
+    }
+
+    /* Match NeoTools: leave Neo usable as a keyboard after fetch. */
+    (void)usb_host_neo_restart();
+    if (uart_want_json()) {
+        printf("{\"applet_id\":%u,\"bytes\":%u,\"path\":", (unsigned)applet_id, (unsigned)out_len);
+        uart_print_json_escaped(path);
+        printf("}\n");
+    } else {
+        printf("Fetched applet 0x%04x (%u bytes) → %s\n", applet_id, (unsigned)out_len, path);
+    }
+    return 0;
 }
 
 static int cmd_neo_list_files(int argc, char **argv)
@@ -2420,6 +2657,7 @@ static int cmd_device_wifi(int argc, char **argv)
     }
 
     if (strcasecmp(action, "scan") == 0) {
+#if HAVE_WIFI_WEB
         esp_err_t err = esp_wifi_scan_start(NULL, true);
         if (err != ESP_OK) {
             printf("device wifi scan: %s\n", esp_err_to_name(err));
@@ -2450,6 +2688,10 @@ static int cmd_device_wifi(int argc, char **argv)
             cJSON_AddItemToArray(arr, it);
         }
         return uart_print_cjson(arr, "device wifi scan");
+#else
+        printf("device wifi scan: Wi-Fi/web disabled in this build\n");
+        return 1;
+#endif
     }
 
     if (strcasecmp(action, "connect") == 0) {
@@ -2469,6 +2711,7 @@ static int cmd_device_wifi(int argc, char **argv)
         }
         strlcpy(cfg.wifi_ssid, ssid, sizeof(cfg.wifi_ssid));
         strlcpy(cfg.wifi_password, password, sizeof(cfg.wifi_password));
+        (void)settings_wifi_upsert(&cfg, ssid, password);
         cfg.network_mode = SETTINGS_NETWORK_HOME;
         if (settings_save(&cfg) != ESP_OK) {
             printf("device wifi connect: save failed\n");
@@ -2836,11 +3079,50 @@ static int uart_ble_print_status(void)
     } else if (st.ble_state == DEVICE_BLE_CONNECTED) {
         state = "connected";
     }
-    printf("{\"state\":\"%s\",\"connected\":%s,\"advertising\":%s,\"pairing_enabled\":%s,"
-           "\"can_send\":%s,\"send_in_progress\":%s,\"bonded\":%d,\"passthrough\":true}\n",
-           state, ble_hid_is_connected() ? "true" : "false", ble_hid_is_advertising() ? "true" : "false",
-           ble_hid_pairing_enabled() ? "true" : "false", ble_hid_can_send() ? "true" : "false",
-           ble_hid_send_in_progress() ? "true" : "false", ble_hid_bonded_count());
+
+    ble_hid_bond_peer_t peers[BLE_HID_MAX_BONDS];
+    int n = ble_hid_list_bonds(peers, BLE_HID_MAX_BONDS);
+
+    if (uart_want_json()) {
+        printf("{\"state\":\"%s\",\"connected\":%s,\"advertising\":%s,\"pairing_enabled\":%s,"
+               "\"can_send\":%s,\"send_in_progress\":%s,\"bonded\":%d,\"passthrough\":true,"
+               "\"bonds\":[",
+               state, ble_hid_is_connected() ? "true" : "false",
+               ble_hid_is_advertising() ? "true" : "false",
+               ble_hid_pairing_enabled() ? "true" : "false",
+               ble_hid_can_send() ? "true" : "false",
+               ble_hid_send_in_progress() ? "true" : "false", n);
+        for (int i = 0; i < n; ++i) {
+            const uint8_t *a = peers[i].addr;
+            printf("%s{\"addr\":\"%02x:%02x:%02x:%02x:%02x:%02x\",\"type\":%u}",
+                   i ? "," : "", a[0], a[1], a[2], a[3], a[4], a[5],
+                   (unsigned)peers[i].type);
+        }
+        printf("]}\n");
+        return 0;
+    }
+
+    printf("BLE state=%s connected=%s advertising=%s pairing=%s bonded=%d\n",
+           state,
+           ble_hid_is_connected() ? "yes" : "no",
+           ble_hid_is_advertising() ? "yes" : "no",
+           ble_hid_pairing_enabled() ? "yes" : "no",
+           n);
+    if (n == 0) {
+        printf("  (no bonded hosts)\n");
+    } else {
+        for (int i = 0; i < n; ++i) {
+            const uint8_t *a = peers[i].addr;
+            const char *kind = "other";
+            if (peers[i].type == 0) {
+                kind = "public";
+            } else if (peers[i].type == 1) {
+                kind = "random";
+            }
+            printf("  %d. %02x:%02x:%02x:%02x:%02x:%02x (%s)\n", i + 1,
+                   a[0], a[1], a[2], a[3], a[4], a[5], kind);
+        }
+    }
     return 0;
 }
 
@@ -2873,13 +3155,45 @@ static int cmd_device_ble(int argc, char **argv)
             printf("device ble pair: use on|off\n");
             return 1;
         }
-        ble_hid_set_pairing_enabled(enabled);
+        esp_err_t perr = ble_hid_set_pairing_enabled(enabled);
         if (uart_want_json()) {
-            printf("{\"pairing\":%s}\n", enabled ? "true" : "false");
+            if (perr != ESP_OK) {
+                size_t largest =
+                    heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+                printf("{\"pairing\":false,\"error\":\"no_mem\",\"largest_internal\":%u}\n",
+                       (unsigned)largest);
+            } else {
+                printf("{\"pairing\":%s,\"advertising\":%s,\"ready\":%s}\n",
+                       enabled ? "true" : "false",
+                       ble_hid_is_advertising() ? "true" : "false",
+                       ble_hid_is_ready() ? "true" : "false");
+            }
+        } else if (perr != ESP_OK) {
+            printf("BLE pairing failed (not enough free memory)\n");
         } else {
             printf("BLE pairing %s\n", enabled ? "enabled" : "disabled");
         }
+        return perr == ESP_OK ? 0 : 1;
+    }
+
+    if (strcasecmp(action, "clear") == 0 ||
+        strcasecmp(action, "unpair") == 0 ||
+        (strcasecmp(action, "bonds") == 0 && argc >= 2 && argv[1] &&
+         (strcasecmp(argv[1], "clear") == 0 || strcasecmp(argv[1], "forget") == 0))) {
+        int before = ble_hid_bonded_count();
+        ble_hid_clear_bonds();
+        if (uart_want_json()) {
+            printf("{\"cleared\":true,\"bonded_before\":%d,\"bonded\":%d}\n",
+                   before, ble_hid_bonded_count());
+        } else {
+            printf("Cleared %d bonded Bluetooth host%s\n",
+                   before, before == 1 ? "" : "s");
+        }
         return 0;
+    }
+
+    if (strcasecmp(action, "bonds") == 0 || strcasecmp(action, "list") == 0) {
+        return uart_ble_print_status();
     }
 
     if (strcasecmp(action, "preview") == 0) {
@@ -2963,7 +3277,7 @@ static int cmd_device_ble(int argc, char **argv)
         return 0;
     }
 
-    printf("device ble: use status|pair on|off|preview TEXT|send|cancel\n");
+    printf("device ble: use status|bonds|pair on|off|clear|preview TEXT|send|cancel\n");
     return 1;
 }
 
@@ -3217,6 +3531,239 @@ static int cmd_device_sync(int argc, char **argv)
     return 1;
 }
 
+#if CONFIG_BUDDY_NEO_LINK
+static int cmd_link_llm(int argc, char **argv)
+{
+    if (uart_help_requested(argc, argv, "link llm")) {
+        return 0;
+    }
+    if (!uart_require_auth(argc, argv)) {
+        return 1;
+    }
+
+    const char *action = (argc >= 1 && argv[0] != NULL) ? argv[0] : "status";
+
+    if (strcasecmp(action, "status") == 0 || strcasecmp(action, "show") == 0 ||
+        strcasecmp(action, "config") == 0) {
+        neo_link_llm_config_t cfg;
+        neo_link_llm_load(&cfg);
+        cJSON *root = cJSON_CreateObject();
+        if (!root) {
+            printf("link llm: out of memory\n");
+            return 1;
+        }
+        neo_link_llm_status_json(root);
+        cJSON_AddStringToObject(root, "system", cfg.system);
+        return uart_print_cjson(root, "link llm");
+    }
+
+    if (strcasecmp(action, "set") == 0) {
+        if (argc < 3 || argv[1] == NULL) {
+            printf("link llm set: missing KEY VALUE\n");
+            return 1;
+        }
+        const char *key = argv[1];
+        char value[NEO_LINK_LLM_SYSTEM_MAX];
+        uart_join_argv(argc, argv, 2, value, sizeof(value));
+
+        neo_link_llm_config_t cfg;
+        if (neo_link_llm_load(&cfg) != ESP_OK) {
+            neo_link_llm_defaults(&cfg);
+        }
+
+        if (strcasecmp(key, "enabled") == 0) {
+            bool b;
+            if (!uart_parse_bool(value, &b)) {
+                printf("link llm set: enabled needs on|off\n");
+                return 1;
+            }
+            cfg.enabled = b;
+        } else if (strcasecmp(key, "base_url") == 0) {
+            strlcpy(cfg.base_url, value, sizeof(cfg.base_url));
+        } else if (strcasecmp(key, "api_key") == 0) {
+            strlcpy(cfg.api_key, value, sizeof(cfg.api_key));
+        } else if (strcasecmp(key, "model") == 0) {
+            strlcpy(cfg.model, value, sizeof(cfg.model));
+        } else if (strcasecmp(key, "system") == 0) {
+            strlcpy(cfg.system, value, sizeof(cfg.system));
+        } else if (strcasecmp(key, "max_tokens") == 0) {
+            cfg.max_tokens = (uint16_t)atoi(value);
+        } else if (strcasecmp(key, "max_rpm") == 0) {
+            cfg.max_rpm = (uint8_t)atoi(value);
+        } else if (strcasecmp(key, "context_turns") == 0 || strcasecmp(key, "ctx_turns") == 0) {
+            cfg.context_turns = (uint8_t)atoi(value);
+        } else {
+            printf("link llm set: unknown key '%s'\n", key);
+            return 1;
+        }
+
+        esp_err_t err = neo_link_llm_save(&cfg);
+        if (err != ESP_OK) {
+            printf("link llm set: %s\n", esp_err_to_name(err));
+            return 1;
+        }
+        if (uart_want_json()) {
+            printf("{\"ok\":true,\"key\":\"%s\"}\n", key);
+        } else if (strcasecmp(key, "api_key") == 0) {
+            printf("LLM api_key %s\n", cfg.api_key[0] ? "updated" : "cleared");
+        } else {
+            printf("LLM %s updated\n", key);
+        }
+        return 0;
+    }
+
+    if (strcasecmp(action, "test") == 0) {
+        char prompt[256] = "Reply with exactly: Neo Link OK";
+        if (argc >= 2) {
+            uart_join_argv(argc, argv, 1, prompt, sizeof(prompt));
+        }
+        char reply[1201];
+        char errbuf[96];
+        esp_err_t err = neo_link_llm_chat(prompt, reply, sizeof(reply), errbuf, sizeof(errbuf));
+        if (uart_want_json()) {
+            cJSON *root = cJSON_CreateObject();
+            if (!root) {
+                printf("{\"ok\":false,\"error\":\"oom\"}\n");
+                return 1;
+            }
+            cJSON_AddBoolToObject(root, "ok", err == ESP_OK);
+            if (err == ESP_OK) {
+                cJSON_AddStringToObject(root, "reply", reply);
+            } else {
+                cJSON_AddStringToObject(root, "error", errbuf[0] ? errbuf : esp_err_to_name(err));
+            }
+            return uart_print_cjson(root, "link llm test");
+        }
+        if (err != ESP_OK) {
+            printf("link llm test failed: %s\n", errbuf[0] ? errbuf : esp_err_to_name(err));
+            return 1;
+        }
+        printf("link llm test ok:\n%s\n", reply);
+        return 0;
+    }
+
+    if (strcasecmp(action, "clear-context") == 0 || strcasecmp(action, "clear_context") == 0) {
+        neo_link_llm_clear_context();
+        if (uart_want_json()) {
+            printf("{\"ok\":true}\n");
+        } else {
+            printf("LLM context cleared\n");
+        }
+        return 0;
+    }
+
+    printf("link llm: use status|set KEY VALUE|test [PROMPT]|clear-context\n");
+    return 1;
+}
+
+static int cmd_link_install(int argc, char **argv)
+{
+    if (uart_help_requested(argc, argv, "link install")) {
+        return 0;
+    }
+    if (!uart_require_auth(argc, argv)) {
+        return 1;
+    }
+
+    bool replace = true;
+    for (int i = 0; i < argc; ++i) {
+        if (argv[i] && (strcasecmp(argv[i], "--no-replace") == 0 || strcasecmp(argv[i], "no-replace") == 0)) {
+            replace = false;
+        }
+    }
+    if (!usb_host_neo_is_connected()) {
+        printf("link install: Neo not connected\n");
+        return 1;
+    }
+    size_t len = 0;
+    (void)neo_link_applet_blob(&len);
+    printf("Installing BetaWise HelloWorld (%u bytes)%s…\n", (unsigned)len, replace ? ", replace" : "");
+    esp_err_t err = neo_link_applet_ensure_current(replace);
+    if (err != ESP_OK) {
+        printf("link install failed: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+    if (uart_want_json()) {
+        printf("{\"ok\":true,\"applet_id\":%u,\"bytes\":%u,\"replaced\":%s}\n",
+               NEO_LINK_APPLET_ID, (unsigned)len, replace ? "true" : "false");
+    } else {
+        printf("Installed Hello World (0x%04X). Open it with Left Shift+Tab at power-on.\n",
+               NEO_LINK_APPLET_ID);
+    }
+    return 0;
+}
+
+static int cmd_link_verify(int argc, char **argv)
+{
+    if (uart_help_requested(argc, argv, "link verify")) {
+        return 0;
+    }
+    if (!uart_require_auth(argc, argv)) {
+        return 1;
+    }
+
+    (void)argc;
+    (void)argv;
+    if (!usb_host_neo_is_connected()) {
+        printf("link verify: Neo not connected\n");
+        return 1;
+    }
+
+    size_t bundled_len = 0;
+    const uint8_t *bundled = neo_link_applet_blob(&bundled_len);
+    if (!bundled || bundled_len == 0) {
+        printf("link verify: no bundled applet\n");
+        return 1;
+    }
+
+    size_t cap = bundled_len + 64;
+    uint8_t *got = malloc(cap);
+    if (!got) {
+        printf("link verify: out of memory\n");
+        return 1;
+    }
+
+    printf("Fetching applet 0x%04X from Neo (expect >= %u bytes)…\n", NEO_LINK_APPLET_ID,
+           (unsigned)bundled_len);
+    size_t out_len = 0;
+    esp_err_t err = usb_host_neo_fetch_applet(NEO_LINK_APPLET_ID, got, cap, &out_len);
+    if (err != ESP_OK) {
+        free(got);
+        printf("link verify: fetch failed: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+
+    printf("Neo returned %u bytes; bundled is %u bytes\n", (unsigned)out_len, (unsigned)bundled_len);
+    if (out_len < bundled_len) {
+        free(got);
+        printf("link verify: FAIL — Neo blob shorter than bundled\n");
+        return 1;
+    }
+
+    size_t mismatch = SIZE_MAX;
+    for (size_t i = 0; i < bundled_len; i++) {
+        if (got[i] != bundled[i]) {
+            mismatch = i;
+            break;
+        }
+    }
+    free(got);
+
+    if (mismatch != SIZE_MAX) {
+        printf("link verify: FAIL — first byte mismatch at offset %u\n", (unsigned)mismatch);
+        return 1;
+    }
+
+    if (out_len != bundled_len) {
+        printf("link verify: OK — first %u bytes match (Neo padded to %u)\n", (unsigned)bundled_len,
+               (unsigned)out_len);
+    } else {
+        printf("link verify: OK — exact match (%u bytes)\n", (unsigned)bundled_len);
+    }
+    return 0;
+}
+#endif /* CONFIG_BUDDY_NEO_LINK */
+
 static int cmd_files_list(int argc, char **argv)
 {
     if (uart_help_requested(argc, argv, "files list")) {
@@ -3238,6 +3785,28 @@ static int cmd_files_list(int argc, char **argv)
         return 1;
     }
     return uart_print_cjson(arr, "files list");
+}
+
+static int cmd_files_probe(int argc, char **argv)
+{
+    if (uart_help_requested(argc, argv, "files probe")) {
+        return 0;
+    }
+    if (!uart_require_auth(argc, argv)) {
+        return 1;
+    }
+    (void)argc;
+    (void)argv;
+    char detail[160];
+    esp_err_t err = file_manager_probe_backup_storage(detail, sizeof(detail));
+    if (err != ESP_OK) {
+        printf("files probe: FAIL %s\n", detail[0] ? detail : esp_err_to_name(err));
+        return 1;
+    }
+    printf("files probe: OK %s\n", detail);
+    printf("  flash_ready=%d free_bytes=%u base=%s\n", file_manager_flash_ready() ? 1 : 0,
+           (unsigned)file_manager_free_bytes(), file_manager_base_path());
+    return 0;
 }
 
 static int cmd_files_view(int argc, char **argv)
@@ -3393,6 +3962,33 @@ static int cmd_keyboard_raw(int argc, char **argv)
     return 0;
 }
 
+static int cmd_keyboard_keylog(int argc, char **argv)
+{
+    if (uart_help_requested(argc, argv, "keyboard keylog")) {
+        return 0;
+    }
+    if (!uart_require_auth(argc, argv)) {
+        return 1;
+    }
+    const char *arg = (argc >= 1 && argv[0]) ? argv[0] : "status";
+    if (strcasecmp(arg, "on") == 0 || strcasecmp(arg, "1") == 0 || strcasecmp(arg, "enable") == 0) {
+        neo_live_set_key_log(true);
+    } else if (strcasecmp(arg, "off") == 0 || strcasecmp(arg, "0") == 0 ||
+               strcasecmp(arg, "disable") == 0) {
+        neo_live_set_key_log(false);
+    } else if (strcasecmp(arg, "status") != 0 && strcasecmp(arg, "show") != 0) {
+        printf("keyboard keylog: use on|off|status\n");
+        return 1;
+    }
+    const bool on = neo_live_get_key_log();
+    if (uart_want_json()) {
+        printf("{\"keylog\":%s}\n", on ? "true" : "false");
+    } else {
+        printf("Keystroke UART log: %s\n", on ? "on" : "off");
+    }
+    return 0;
+}
+
 static int cmd_ping(int argc, char **argv)
 {
     if (uart_help_requested(argc, argv, "ping")) {
@@ -3515,6 +4111,10 @@ static void uart_completion(const char *buf, linenoiseCompletions *lc)
         group = "keyboard";
         group_cmd_len = 8;
         partial = (blen > 9) ? buf + 9 : "";
+    } else if (blen >= 4 && strncmp(buf, "link", 4) == 0 && (blen == 4 || buf[4] == ' ')) {
+        group = "link";
+        group_cmd_len = 4;
+        partial = (blen > 5) ? buf + 5 : "";
     }
 
     if (group) {

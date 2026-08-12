@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Neo2 Buddy">
+  <rect width="32" height="32" rx="7" fill="#0c334b"/>
+  <rect x="5" y="6" width="22" height="15" rx="2.5" fill="#f3f0e8"/>
+  <rect x="7.5" y="8.5" width="3.2" height="2.6" rx="0.4" fill="#165d7d"/>
+  <rect x="11.7" y="8.5" width="3.2" height="2.6" rx="0.4" fill="#165d7d"/>
+  <rect x="15.9" y="8.5" width="3.2" height="2.6" rx="0.4" fill="#165d7d"/>
+  <rect x="20.1" y="8.5" width="3.2" height="2.6" rx="0.4" fill="#d85f3f"/>
+  <rect x="7.5" y="12.2" width="3.2" height="2.6" rx="0.4" fill="#165d7d"/>
+  <rect x="11.7" y="12.2" width="7.4" height="2.6" rx="0.4" fill="#b8b0a2"/>
+  <rect x="20.1" y="12.2" width="3.2" height="2.6" rx="0.4" fill="#165d7d"/>
+  <rect x="7.5" y="15.9" width="15.8" height="2.6" rx="0.4" fill="#efbb4c"/>
+  <circle cx="23.5" cy="24.5" r="4.2" fill="#d85f3f"/>
+  <circle cx="23.5" cy="24.5" r="1.6" fill="#fffcf6"/>
+</svg>

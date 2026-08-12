@@ -4,7 +4,8 @@
  *
  * Pipeline (AlphaWord):
  *   Neo raw bytes → neo_conv UTF-8 → content policy checks → prune if needed →
- *   atomic write under `/sdcard/neo` (preferred) or `/spiflash/neo`.
+ *   atomic write under /sdcard/neo (preferred) or flat files on /spiflash
+ *   (SPIFFS has no real directories — do not mkdir /spiflash/neo).
  *
  * Filename scheme (see neo_import.h):
  *   {deviceId}_s{NN}_{fileName}_{YYYYMMDD}.txt
@@ -39,6 +40,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "neo_import.h"
+#include "file_manager.h"
 #include "board_config.h"
 #if HAVE_SDCARD
 #include "sd_card.h"
@@ -117,7 +119,7 @@ static void fill_date_stamp(char *out, size_t out_size)
     }
 }
 
-/** Prefer microSD when mounted; otherwise SPIFFS/LittleFS under /spiflash. */
+/** Prefer microSD when mounted; otherwise flat SPIFFS under /spiflash (no mkdir). */
 const char *neo_import_base_dir(void)
 {
 #if HAVE_SDCARD
@@ -125,7 +127,7 @@ const char *neo_import_base_dir(void)
         return NEO_IMPORT_DIRECTORY;
     }
 #endif
-    return "/spiflash/neo";
+    return "/spiflash";
 }
 
 /**
@@ -147,8 +149,17 @@ esp_err_t neo_import_build_document_path(uint8_t file_index, const char *file_na
     sanitize_name(file_name, sanitized_name, sizeof(sanitized_name));
     fill_date_stamp(date_stamp, sizeof(date_stamp));
 
-    int n = snprintf(out_path, out_path_size, "%s/%s_s%02u_%s_%s.txt", neo_import_base_dir(),
-                     device_id, file_index, sanitized_name, date_stamp);
+    const char *base = neo_import_base_dir();
+    const bool on_flash = strncmp(base, "/spiflash", 9) == 0;
+    int n;
+    if (on_flash) {
+        /* Keep under SPIFFS object-name limits: short device + name + date. */
+        n = snprintf(out_path, out_path_size, "%s/%.10s_s%02u_%.16s_%.8s.txt", base, device_id,
+                     file_index, sanitized_name, date_stamp);
+    } else {
+        n = snprintf(out_path, out_path_size, "%s/%s_s%02u_%s_%s.txt", base, device_id, file_index,
+                     sanitized_name, date_stamp);
+    }
     if (n < 0 || (size_t)n >= out_path_size) {
         return ESP_ERR_INVALID_SIZE;
     }
@@ -371,8 +382,32 @@ size_t neo_import_prune_old_backups(size_t bytes_needed)
 /* -------------------------------------------------------------------------- */
 
 /**
- * Write via `.tmp` + fsync + rename so a power cut does not leave a half file
- * as the only copy of a Neo document.
+ * Direct overwrite (SPIFFS-safe fallback when rename is unreliable).
+ */
+static esp_err_t write_file_direct(const char *destination_path, const char *contents,
+                                   size_t contents_length)
+{
+    FILE *file = fopen(destination_path, "wb");
+    if (file == NULL) {
+        ESP_LOGE(TAG, "Could not open document: %s errno=%d", destination_path, errno);
+        return ESP_FAIL;
+    }
+    size_t written = fwrite(contents, 1, contents_length, file);
+    if (written != contents_length || fflush(file) != 0) {
+        fclose(file);
+        unlink(destination_path);
+        ESP_LOGE(TAG, "Could not write AlphaSmart document: errno=%d", errno);
+        return ESP_FAIL;
+    }
+    (void)fsync(fileno(file)); /* best-effort; SPIFFS may return EINVAL */
+    fclose(file);
+    return ESP_OK;
+}
+
+/**
+ * Write via `.tmp` + fflush + rename so a power cut does not leave a half file
+ * as the only copy of a Neo document. Falls back to direct write on SPIFFS
+ * rename quirks (destination exists, or rename unsupported).
  */
 static esp_err_t write_file_atomically(const char *destination_path, const char *contents,
                                        size_t contents_length)
@@ -385,23 +420,26 @@ static esp_err_t write_file_atomically(const char *destination_path, const char 
 
     FILE *file = fopen(temporary_path, "wb");
     if (file == NULL) {
-        ESP_LOGE(TAG, "Could not open temporary document: errno=%d", errno);
-        return ESP_FAIL;
+        ESP_LOGW(TAG, "tmp open failed errno=%d; trying direct write", errno);
+        return write_file_direct(destination_path, contents, contents_length);
     }
 
     size_t written = fwrite(contents, 1, contents_length, file);
-    if (written != contents_length || fflush(file) != 0 || fsync(fileno(file)) != 0) {
+    if (written != contents_length || fflush(file) != 0) {
         fclose(file);
         unlink(temporary_path);
         ESP_LOGE(TAG, "Could not write AlphaSmart document: errno=%d", errno);
         return ESP_FAIL;
     }
+    (void)fsync(fileno(file)); /* best-effort; do not fail the backup on fsync alone */
     fclose(file);
 
+    unlink(destination_path); /* SPIFFS rename often fails if dest already exists */
     if (rename(temporary_path, destination_path) != 0) {
+        ESP_LOGW(TAG, "rename failed errno=%d; copying to final path", errno);
+        esp_err_t err = write_file_direct(destination_path, contents, contents_length);
         unlink(temporary_path);
-        ESP_LOGE(TAG, "Could not finalize AlphaSmart document: errno=%d", errno);
-        return ESP_FAIL;
+        return err;
     }
     return ESP_OK;
 }
@@ -421,7 +459,13 @@ static esp_err_t write_prepared_document(const char *destination_path, const cha
 static esp_err_t prepare_backup_directory(size_t bytes_needed)
 {
     const char *base_dir = neo_import_base_dir();
-    if (mkdir(base_dir, 0775) != 0 && errno != EEXIST) {
+    /* SPIFFS is flat: mkdir and stat("/spiflash") both fail even when mounted. */
+    if (strncmp(base_dir, "/spiflash", 9) == 0) {
+        if (!file_manager_flash_ready()) {
+            ESP_LOGE(TAG, "SPIFFS partition not ready at %s", base_dir);
+            return ESP_FAIL;
+        }
+    } else if (mkdir(base_dir, 0775) != 0 && errno != EEXIST) {
         ESP_LOGE(TAG, "Could not create Neo directory: %s errno=%d", base_dir, errno);
         return ESP_FAIL;
     }
@@ -498,6 +542,35 @@ esp_err_t neo_import_save_document_if_changed(const neo_document_t *document, ch
 }
 
 /**
+ * Force-write today's path (Backup all). Blank still skipped; identical existing
+ * backups do not block the write.
+ */
+esp_err_t neo_import_save_document_force(const neo_document_t *document, char *saved_path,
+                                         size_t saved_path_size)
+{
+    if (document == NULL || document->utf8_text == NULL || saved_path == NULL || saved_path_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (neo_import_text_is_blank(document->utf8_text, document->utf8_text_length)) {
+        ESP_LOGI(TAG, "skip blank document index=%u", document->file_index);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    esp_err_t err = neo_import_build_document_path(document->file_index, document->file_name, saved_path,
+                                                 saved_path_size);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    esp_err_t prep = prepare_backup_directory(document->utf8_text_length + 4096);
+    if (prep != ESP_OK) {
+        return prep;
+    }
+
+    return write_prepared_document(saved_path, document->utf8_text, document->utf8_text_length);
+}
+
+/**
  * Convert Neo raw applet bytes to UTF-8 (EN-US map) then save via the same
  * policy path as AlphaWord text. Used for non-AlphaWord applet file downloads.
  */
@@ -536,7 +609,7 @@ esp_err_t neo_import_save_raw_document(const uint8_t *neo_data, size_t neo_len,
  * NeoTools-style “read all files on applet”: walk indices until NOT_FOUND.
  * AlphaWord slots are exported with @p map; other applets use raw→UTF-8 via EN-US.
  * Yields once per file so USB bulk callbacks stay responsive.
- * Blank / duplicate skips do not abort the walk.
+ * Blank slots are skipped; non-empty AlphaWord files are force-written (Backup all).
  */
 esp_err_t neo_import_backup_applet_files(uint16_t applet_id, neo_charmap_id_t map,
                                          neo_import_saved_file_t *results, size_t max_results,
@@ -560,9 +633,9 @@ esp_err_t neo_import_backup_applet_files(uint16_t applet_id, neo_charmap_id_t ma
         if (err != ESP_OK) {
             return err;
         }
-        if (raw_len == 0) {
+        if (raw_len == 0 || neo_import_neo_raw_is_empty(raw, raw_len)) {
             free(raw);
-            continue; /* Empty Neo slot — not an error. */
+            continue; /* Empty / pad-only Neo slot — not an error. */
         }
 
         neo_import_saved_file_t *slot = &results[*out_count];
@@ -590,11 +663,11 @@ esp_err_t neo_import_backup_applet_files(uint16_t applet_id, neo_charmap_id_t ma
                 .utf8_text = text,
                 .utf8_text_length = text_len,
             };
-            err = neo_import_save_document(&doc, slot->path, sizeof(slot->path));
+            /* Force write — unlike Backup now / autobackup which skip unchanged. */
+            err = neo_import_save_document_force(&doc, slot->path, sizeof(slot->path));
             slot->bytes_saved = text_len;
             free(text);
-            /* Policy skips: treat as “nothing new”, keep scanning remaining slots. */
-            if (err == ESP_ERR_NOT_FOUND || err == ESP_ERR_INVALID_STATE) {
+            if (err == ESP_ERR_NOT_FOUND) {
                 continue;
             }
         } else {

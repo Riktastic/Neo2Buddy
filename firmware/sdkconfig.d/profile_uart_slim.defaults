@@ -1,0 +1,13 @@
+# UART slim: Neo USB + serial console only (no Wi-Fi/web, BLE, App Store, OLED, SD).
+# CONFIG_SUPPORT_WIFI_WEB is not set
+# CONFIG_SUPPORT_BLE is not set
+# CONFIG_SUPPORT_STOCK_APPLETS is not set
+# CONFIG_SUPPORT_OLED is not set
+# CONFIG_SUPPORT_SDCARD is not set
+CONFIG_SUPPORT_BATTERY=y
+CONFIG_BUDDY_UART_CMD=y
+
+# Drop Bluetooth stack entirely for this profile.
+# CONFIG_BT_ENABLED is not set
+# CONFIG_BT_CONTROLLER_ENABLED is not set
+# CONFIG_BT_NIMBLE_ENABLED is not set

@@ -22,9 +22,9 @@ Think of it as a quiet stagehand: the Neo stays the star; the Buddy handles the 
 
 The USB “manager” language the Buddy speaks was figured out largely by studying **[NeoTools](https://github.com/lykahb/neotools)** by [Borys Lykah](https://github.com/lykahb) (built on earlier work in [AlphaSync](https://github.com/tSoniq/alphasync/)). We stand on that research so you can keep typing.
 
-Current release: **1.0.0-beta.1** in [`releases/1.0.0-beta.1/`](releases/1.0.0-beta.1/). Licensed under [GPL-3.0](LICENSE).
+Current release: **1.0.0**. Package the Full image + Setup zip with `.\firmware\scripts\package-release.ps1 -Version 1.0.0`, or build curated lean profiles with `.\firmware\scripts\package-profiles.ps1 -Version 1.0.0` (output under [`releases/1.0.0/`](releases/1.0.0/) and siblings such as `releases/1.0.0-uart-slim/`). Licensed under [GPL-3.0](LICENSE). Previous preview: [`releases/1.0.0-beta.1/`](releases/1.0.0-beta.1/).
 
-> **Beta — work in progress.** This project is early software. Expect rough edges, missing polish, and behaviour that may change between releases. Development and testing so far have used a **Dutch-market Neo2** only. **UK, US, and other regional keyboard layouts** may behave slightly differently — especially for live typing, Bluetooth passthrough, and text import/export. We have not been able to test on other regional variants yet. Bug reports and layout feedback are very welcome.
+> **Version 1.0.** Core backup, portal, Bluetooth relay, and cloud sync are ready for daily use. **Applet Store installs are paused** in 1.0.0 while stock SmartApplets get more testing (Flash Cards deck library still works). Primary development and testing so far used a **Dutch-market Neo2**. **UK, US, and other regional keyboard layouts** may behave slightly differently — especially for live typing, Bluetooth passthrough, and text import/export. Layout feedback and bug reports are welcome.
 
 > **Disclaimer.** Neo2 Buddy is an independent, community project. We are **not affiliated with, endorsed by, or sponsored by** AlphaSmart, Renaissance Learning, or any of their successors. This project does **not** reverse-engineer or redistribute AlphaSmart or Renaissance software. Device communication is implemented from **public, third-party research** (notably [NeoTools](https://github.com/lykahb/neotools) and [AlphaSync](https://github.com/tSoniq/alphasync/)) and our own interoperability work with the Neo2 hardware. *AlphaSmart* and related names are trademarks of their respective owners. If you represent the rights holder and believe this project raises a copyright or trademark concern, please [open an issue](https://github.com/Riktastic/Neo2Buddy/issues) or contact the maintainer — we want to resolve any concern cooperatively and promptly.
 
@@ -100,18 +100,42 @@ cd firmware
 
 ### 3. Flash the firmware
 
-#### Option A — Prebuilt release (easiest)
+#### Option A — Setup GUI (no ESP-IDF)
+
+Cross-platform Python app (`flasher/`): pick the COM/serial port, choose a **firmware profile**, follow download-mode steps, install.
 
 ```powershell
-cd releases\1.0.0-beta.1
-python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 8MB --flash_freq 80m 0x0 bootloader.bin 0x8000 partition-table.bin 0xf000 ota_data_initial.bin 0x20000 alpha_smart_neo2_buddy.bin 0x420000 littlefs.bin
+cd flasher
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1   # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+python -m neo2buddy_flasher
+```
+
+Defaults to the **Full** images in `releases/1.0.0/`. Optional lean packs (when present):
+
+| Profile | Folder | What you get |
+|---------|--------|----------------|
+| Full | `releases/1.0.0/` | Portal + BLE + Applet Store + OLED + SD |
+| Headless | `releases/1.0.0-headless/` | No OLED / microSD |
+| UART slim | `releases/1.0.0-uart-slim/` | Serial console + Neo USB only (no Wi‑Fi portal) |
+
+Details: [flasher/README.md](flasher/README.md).
+
+#### Option B — Prebuilt release (esptool CLI)
+
+```powershell
+cd releases\1.0.0
+python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 8MB --flash_freq 80m 0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 alpha_smart_neo2_buddy.bin 0x1C0000 littlefs.bin
 ```
 
 Adjust the COM port if your esptool needs `-p COMx`. Use the board’s **UART / CH340** USB port for flashing, not OTG1.
 
+> **Note:** Older release zips used an OTA-capable layout (`ota_data_initial.bin` at `0xf000`, app at `0x20000`, web at `0x420000`). Current builds use a single ~1.7 MB factory app and a larger SPIFFS partition at `0x1C0000` — use the command above (or `flash_args` from the release folder), not the old offsets.
+
 ![Olimex ESP32-S3 in UART flashing mode (CH340 port, not OTG1)](docs/assets/olimex-esp32s3-flashing.jpg)
 
-#### Option B — Project flash script (build + flash)
+#### Option C — Project flash script (build + flash)
 
 ```powershell
 cd firmware
@@ -120,7 +144,7 @@ cd firmware
 .\flash.ps1 COM3 -ManualBoot  # Olimex: hold BUT1, tap RST1, release BUT1, then Enter
 ```
 
-#### Option C — Build from source
+#### Option D — Build from source (Full image)
 
 ```powershell
 cd firmware
@@ -132,9 +156,31 @@ idf.py -p COMx flash monitor
 
 The portal files in `firmware-web/` are packed into `littlefs.bin` at build time.
 
+#### Option E — Image Builder (custom / lean images)
+
+Developers with ESP-IDF can toggle Wi‑Fi/web, Bluetooth, Applet Store, OLED, SD, and more, then build and optionally flash:
+
+```powershell
+cd flasher
+.\.venv\Scripts\Activate.ps1
+pip install -e .
+python -m neo2buddy_flasher.builder_app
+# or: neo2buddy-build
+```
+
+Exports land in `releases/custom/<name>/` and show up in Setup’s profile list. Presets use `firmware/sdkconfig.d/profile_*.defaults`. See [flasher/README.md](flasher/README.md#image-builder-developers--esp-idf-required).
+
+To package curated release profiles after building:
+
+```powershell
+.\firmware\scripts\package-profiles.ps1 -Version 1.0.0
+```
+
 ---
 
 ### 4. First portal setup
+
+> **UART slim / no-Wi‑Fi builds:** skip this section. Open a serial terminal at **115200** baud, `login <password>`, then `help`.
 
 1. Power the buddy. Join its Wi‑Fi hotspot (name starts with **Neo2**).
 2. Open [http://192.168.4.1](http://192.168.4.1) (or the address on the OLED if fitted).
@@ -245,8 +291,22 @@ Point the client at the buddy’s LAN IP or `http://neo2-buddy.local` when on ho
 
 ## Package a release
 
+Full image + Setup zip (GitHub Releases):
+
 ```powershell
-.\firmware\scripts\package-release.ps1 -Version 1.0.0-beta.1
+.\firmware\scripts\package-release.ps1 -Version 1.0.0
+```
+
+Full + Headless + UART slim packs (needs ESP-IDF; builds each profile):
+
+```powershell
+.\firmware\scripts\package-profiles.ps1 -Version 1.0.0
+```
+
+Single profile from an existing build tree:
+
+```powershell
+.\firmware\scripts\package-profile.ps1 -Version 1.0.0 -Profile uart-slim -BuildDir firmware\build-custom\uart-slim
 ```
 
 Unit tests:
@@ -296,7 +356,8 @@ Many ESP32-S3 modules are tiny. A purpose-built board (or compact carrier) could
 | `firmware/` | ESP-IDF firmware (Neo USB, services, HTTP API) |
 | `firmware-web/` | Browser portal (HTML/CSS/JS) → LittleFS image; [live showcase on GitHub Pages](docs/portal-showcase.md) |
 | `python-wrapper/` | Remote CLI / library (`neo2buddy_wrapper`) |
-| `releases/` | Flashable binaries |
+| `flasher/` | Setup GUI (flash prebuilt profiles) + Image Builder (ESP-IDF custom builds) |
+| `releases/` | Flashable binaries (`1.0.0`, optional `-headless` / `-uart-slim`, `custom/`) |
 | `docs/` | Hardware / wiring notes and [portal screenshots](docs/portal-showcase.md) |
 | `firmware/docs/` | Neo USB, cloud sync, limits |
 | `specs/` | Product behaviour (kept current) |
@@ -321,6 +382,7 @@ Many ESP32-S3 modules are tiny. A purpose-built board (or compact carrier) could
 - [Neo USB & backup](firmware/docs/neo-usb-and-backup.md)
 - [Cloud sync](firmware/docs/cloud-sync.md)
 - [Python wrapper](python-wrapper/README.md)
+- [Setup & Image Builder](flasher/README.md)
 - [NeoTools](https://github.com/lykahb/neotools)
 - [Product spec](specs/001-alphatouch-buddy/spec.md)
 - [Neo module map](firmware/main/neo/README.md)

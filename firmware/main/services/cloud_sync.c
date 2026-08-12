@@ -1,11 +1,12 @@
 /**
  * @file cloud_sync.c
- * @brief WebDAV PUT and S3-compatible SigV4 uploads for local Neo backups.
+ * @brief WebDAV PUT, S3 SigV4, and Hammer Ink sync uploads for local Neo backups.
  */
 
 #include "cloud_sync.h"
 
 #include "file_manager.h"
+#include "hammer_ink.h"
 #include "log_buffer.h"
 #include "wifi_manager.h"
 
@@ -32,7 +33,7 @@
 static const char *TAG = "cloud_sync";
 
 #define CLOUD_SYNC_NVS_NS "cloud_sync"
-#define CLOUD_SYNC_TASK_STACK 12288
+#define CLOUD_SYNC_TASK_STACK 16384
 #define CLOUD_SYNC_HTTP_TIMEOUT_MS 120000
 #define CLOUD_SYNC_HTTP_RETRIES 3
 #define CLOUD_SYNC_RETRY_BASE_MS 400
@@ -788,6 +789,14 @@ static int cloud_sync_count_backup_files(void)
     return count;
 }
 
+static void cloud_sync_hammer_progress(uint8_t current, uint8_t total, const char *filename, void *ctx)
+{
+    (void)filename;
+    (void)ctx;
+    s_status.current = current;
+    s_status.total = total;
+}
+
 static void cloud_sync_run_task(void *arg)
 {
     (void)arg;
@@ -828,6 +837,44 @@ static void cloud_sync_run_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
+
+    if (cfg.provider == CLOUD_SYNC_PROVIDER_HAMMER) {
+        strlcpy(s_status.phase, "running", sizeof(s_status.phase));
+        s_status.uploaded = 0;
+        s_status.failed = 0;
+        s_status.current = 0;
+        s_status.total = (uint8_t)cloud_sync_count_backup_files();
+        log_buffer_appendf("cloud: Hammer upload started (%u file(s))", (unsigned)s_status.total);
+
+        hammer_ink_config_t hcfg = {
+            .endpoint = cfg.endpoint,
+            .email = cfg.username,
+            .password = cfg.secret,
+            .project_name = cfg.folder[0] ? cfg.folder : HAMMER_INK_DEFAULT_PROJECT,
+        };
+        uint32_t up = 0;
+        uint32_t fail = 0;
+        char err[128];
+        esp_err_t hret =
+            hammer_ink_upload_backups(&hcfg, &up, &fail, cloud_sync_hammer_progress, NULL, err, sizeof(err));
+        s_status.uploaded = up;
+        s_status.failed = fail;
+        s_status.last_ok = (hret == ESP_OK && fail == 0);
+        strlcpy(s_status.last_message, err, sizeof(s_status.last_message));
+        if (s_status.last_ok) {
+            log_buffer_appendf("cloud: Hammer upload finished (%u note(s))", (unsigned)up);
+        } else {
+            log_buffer_append_level(LOG_LEVEL_WARN, "cloud: Hammer upload finished with errors: %s", err);
+        }
+        strlcpy(s_status.phase, "done", sizeof(s_status.phase));
+        cloud_sync_persist_runtime_status();
+        s_busy = false;
+        s_status.busy = false;
+        s_task = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
     if (cfg.provider == CLOUD_SYNC_PROVIDER_WEBDAV) {
         char folder_err[96];
         if (cloud_sync_webdav_ensure_folders(&cfg, folder_err, sizeof(folder_err)) != ESP_OK) {
@@ -948,6 +995,8 @@ static const char *cloud_sync_provider_string(cloud_sync_provider_t p)
         return "webdav";
     case CLOUD_SYNC_PROVIDER_S3:
         return "s3";
+    case CLOUD_SYNC_PROVIDER_HAMMER:
+        return "hammer";
     default:
         return "none";
     }
@@ -963,6 +1012,9 @@ static cloud_sync_provider_t cloud_sync_provider_from_string(const char *s)
     }
     if (strcmp(s, "s3") == 0) {
         return CLOUD_SYNC_PROVIDER_S3;
+    }
+    if (strcmp(s, "hammer") == 0) {
+        return CLOUD_SYNC_PROVIDER_HAMMER;
     }
     return CLOUD_SYNC_PROVIDER_NONE;
 }
@@ -994,6 +1046,9 @@ esp_err_t cloud_sync_apply_config_json(const cJSON *root, char *err, size_t err_
             return ESP_ERR_INVALID_ARG;
         }
         strlcpy(cfg.endpoint, item->valuestring, sizeof(cfg.endpoint));
+    }
+    if (cfg.provider == CLOUD_SYNC_PROVIDER_HAMMER && cfg.endpoint[0] == '\0') {
+        strlcpy(cfg.endpoint, HAMMER_INK_DEFAULT_ENDPOINT, sizeof(cfg.endpoint));
     }
     item = cJSON_GetObjectItemCaseSensitive(root, "folder");
     if (cJSON_IsString(item) && item->valuestring) {
@@ -1030,16 +1085,22 @@ esp_err_t cloud_sync_apply_config_json(const cJSON *root, char *err, size_t err_
             return ESP_ERR_INVALID_ARG;
         }
         if (cfg.username[0] == '\0') {
-            snprintf(err, err_size, "username or access key required");
+            snprintf(err, err_size,
+                     cfg.provider == CLOUD_SYNC_PROVIDER_HAMMER ? "email required" : "username or access key required");
             return ESP_ERR_INVALID_ARG;
         }
         if (cfg.secret[0] == '\0') {
-            snprintf(err, err_size, "app password or secret key required");
+            snprintf(err, err_size,
+                     cfg.provider == CLOUD_SYNC_PROVIDER_HAMMER ? "password required"
+                                                                : "app password or secret key required");
             return ESP_ERR_INVALID_ARG;
         }
         if (cfg.provider == CLOUD_SYNC_PROVIDER_S3 && cfg.bucket[0] == '\0') {
             snprintf(err, err_size, "bucket required for S3");
             return ESP_ERR_INVALID_ARG;
+        }
+        if (cfg.provider == CLOUD_SYNC_PROVIDER_HAMMER && cfg.folder[0] == '\0') {
+            strlcpy(cfg.folder, HAMMER_INK_DEFAULT_PROJECT, sizeof(cfg.folder));
         }
     }
 
@@ -1137,6 +1198,25 @@ esp_err_t cloud_sync_test(char *message, size_t message_size)
     if (cfg.provider == CLOUD_SYNC_PROVIDER_S3 && cfg.bucket[0] == '\0') {
         snprintf(message, message_size, "Bucket required for S3");
         return ESP_ERR_INVALID_STATE;
+    }
+
+    if (cfg.provider == CLOUD_SYNC_PROVIDER_HAMMER) {
+        hammer_ink_config_t hcfg = {
+            .endpoint = cfg.endpoint,
+            .email = cfg.username,
+            .password = cfg.secret,
+            .project_name = cfg.folder[0] ? cfg.folder : HAMMER_INK_DEFAULT_PROJECT,
+        };
+        esp_err_t ht = hammer_ink_test(&hcfg, message, message_size);
+        s_status.last_test_ok = (ht == ESP_OK);
+        strlcpy(s_status.last_test_message, message, sizeof(s_status.last_test_message));
+        cloud_sync_persist_runtime_status();
+        if (ht == ESP_OK) {
+            log_buffer_appendf("cloud: Hammer connection test OK");
+        } else {
+            log_buffer_append_level(LOG_LEVEL_WARN, "cloud: Hammer connection test failed: %s", message);
+        }
+        return ht;
     }
 
     const uint8_t *body = (const uint8_t *)CLOUD_SYNC_TEST_BODY;

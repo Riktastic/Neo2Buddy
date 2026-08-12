@@ -17,6 +17,7 @@
 #include "neo_live.h"
 
 #include <ctype.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -31,12 +32,23 @@ static char text[NEO_LIVE_TEXT_CAPACITY];
 static size_t text_length;
 static unsigned long text_sequence;
 static SemaphoreHandle_t text_mutex;
+static bool s_key_log_enabled = false;
 
 void neo_live_init(void)
 {
     if (text_mutex == NULL) text_mutex = xSemaphoreCreateMutex();
     /* Start with an empty buffer and increment the sequence. */
     neo_live_clear();
+}
+
+void neo_live_set_key_log(bool enabled)
+{
+    s_key_log_enabled = enabled;
+}
+
+bool neo_live_get_key_log(void)
+{
+    return s_key_log_enabled;
 }
 
 /** Append `length` bytes from `input` into the rolling buffer.
@@ -62,19 +74,21 @@ void neo_live_append(const char *input, size_t length)
     text[text_length] = '\0';
     text_sequence++;
 
-    /* Mirror printable keystrokes to UART for field debugging. */
-    for (size_t i = 0; i < length; i++) {
-        unsigned char c = (unsigned char)input[i];
-        if (c == '\n') {
-            ESP_LOGI(TAG, "key: \\n");
-        } else if (c == '\r') {
-            ESP_LOGI(TAG, "key: \\r");
-        } else if (c == '\t') {
-            ESP_LOGI(TAG, "key: \\t");
-        } else if (isprint(c)) {
-            ESP_LOGI(TAG, "key: %c", c);
-        } else {
-            ESP_LOGI(TAG, "key: 0x%02x", c);
+    /* Optional UART mirror — off by default; enable via `keyboard keylog on`. */
+    if (s_key_log_enabled) {
+        for (size_t i = 0; i < length; i++) {
+            unsigned char c = (unsigned char)input[i];
+            if (c == '\n') {
+                ESP_LOGI(TAG, "key: \\n");
+            } else if (c == '\r') {
+                ESP_LOGI(TAG, "key: \\r");
+            } else if (c == '\t') {
+                ESP_LOGI(TAG, "key: \\t");
+            } else if (isprint(c)) {
+                ESP_LOGI(TAG, "key: %c", c);
+            } else {
+                ESP_LOGI(TAG, "key: 0x%02x", c);
+            }
         }
     }
 
@@ -89,6 +103,19 @@ void neo_live_clear(void)
     text_length = 0;
     text_sequence++;
     xSemaphoreGive(text_mutex);
+}
+
+esp_err_t neo_live_get_sequence(unsigned long *sequence)
+{
+    if (!sequence || !text_mutex) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (xSemaphoreTake(text_mutex, pdMS_TO_TICKS(20)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    *sequence = text_sequence;
+    xSemaphoreGive(text_mutex);
+    return ESP_OK;
 }
 
 /**

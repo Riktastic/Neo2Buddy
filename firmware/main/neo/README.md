@@ -41,7 +41,7 @@ Then `send_command`, `read_extended`, `write_extended`. End with `?reset`.
 
 | Module | Role |
 |--------|------|
-| `neo_applet.c` | LIST/INSTALL/REMOVE applets via system 0x0000 |
+| `neo_applet.c` | LIST/INSTALL/REMOVE/**FETCH** applets via system 0x0000 (NeoTools `applets fetch`) |
 | `neo_file.c` | GET/SET attributes, READ_RAW, WRITE_RAW, COMMIT |
 | `neo_space.c` | Free ROM/RAM queries |
 | `neo_conv.c` | AlphaWord bytes ↔ UTF-8 |

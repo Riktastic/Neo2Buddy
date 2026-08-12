@@ -11,13 +11,21 @@
 
 #include "esp_err.h"
 #include "cJSON.h"
+#include <stdbool.h>
 #include <stddef.h>
 
-#define FILE_MANAGER_NAME_MAX 48
+#define FILE_MANAGER_NAME_MAX 64
 #define FILE_MANAGER_MAX_UPLOAD (256 * 1024)
 
 /** Active storage root (SD preferred, SPIFFS fallback). */
 const char *file_manager_base_path(void);
+/** True when the littlefs/SPIFFS portal partition is mounted and usable. */
+bool file_manager_flash_ready(void);
+/**
+ * End-to-end probe: ensure dir, write a small backup file, list it, read it back, delete.
+ * @param detail optional human-readable result (OK reason or error).
+ */
+esp_err_t file_manager_probe_backup_storage(char *detail, size_t detail_size);
 /** Ensure the storage directory exists. */
 esp_err_t file_manager_ensure_dir(void);
 /** Append file entries (name, size, modified) to a JSON array. */

@@ -86,7 +86,7 @@ static esp_err_t backup_file_if_changed(uint16_t applet_id, uint8_t index, size_
     if (err != ESP_OK) {
         return err;
     }
-    if (raw_len == 0) {
+    if (raw_len == 0 || neo_import_neo_raw_is_empty(raw, raw_len)) {
         free(raw);
         if (out_skipped) {
             (*out_skipped)++;

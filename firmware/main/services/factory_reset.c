@@ -69,8 +69,20 @@ static void factory_reset_delete_path(const char *path)
     unlink(path);
 }
 
+static bool factory_reset_is_txt_name(const char *name)
+{
+    size_t nlen = strlen(name);
+    if (nlen < 5) {
+        return false;
+    }
+    const char *ext = name + nlen - 4;
+    return (ext[0] == '.' && (ext[1] == 't' || ext[1] == 'T') && (ext[2] == 'x' || ext[2] == 'X') &&
+            (ext[3] == 't' || ext[3] == 'T'));
+}
+
 static esp_err_t factory_reset_clear_internal_backups(void)
 {
+    /* Legacy subdirectory (pre flat-/spiflash layout). */
     factory_reset_delete_path(FACTORY_RESET_SPIFFS_BACKUP_DIR);
 
     DIR *root = opendir("/spiflash");
@@ -84,7 +96,10 @@ static esp_err_t factory_reset_clear_internal_backups(void)
         if (ent->d_name[0] == '.') {
             continue;
         }
-        if (strncmp(ent->d_name, "neo", 3) != 0) {
+        const bool is_txt = factory_reset_is_txt_name(ent->d_name);
+        const bool is_map = strcmp(ent->d_name, "hammer_notes.map") == 0;
+        const bool is_legacy_neo = strncmp(ent->d_name, "neo", 3) == 0;
+        if (!is_txt && !is_map && !is_legacy_neo) {
             continue;
         }
         snprintf(path, sizeof(path), "/spiflash/%s", ent->d_name);
@@ -112,7 +127,8 @@ void factory_reset_execute(void)
         ESP_LOGW(TAG, "internal backup cleanup: %s", esp_err_to_name(result));
     }
 
-    const char *namespaces[] = {"device", "auth", "cloud_sync", "nimble_bond", "bt_nimble"};
+    const char *namespaces[] = {"device", "auth", "cloud_sync", "hammer_ink", "neo_link", "ble_hid", "nimble_bond",
+                                "bt_nimble"};
     for (size_t i = 0; i < sizeof(namespaces) / sizeof(namespaces[0]); i++) {
         result = factory_reset_erase_namespace(namespaces[i]);
         if (result != ESP_OK) {

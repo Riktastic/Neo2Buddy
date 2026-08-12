@@ -22,7 +22,7 @@ static esp_err_t send_key_report(uint8_t modifier, uint8_t keycode)
     if (err != ESP_OK) {
         return err;
     }
-    vTaskDelay(pdMS_TO_TICKS(8));
+    vTaskDelay(pdMS_TO_TICKS(2));
     return ble_hid_gatt_send_report(release, sizeof(release));
 }
 
@@ -103,7 +103,7 @@ void ble_hid_device_send_string(const char *s)
             break;
         }
         ble_hid_device_send_char(*s++);
-        vTaskDelay(pdMS_TO_TICKS(12));
+        vTaskDelay(pdMS_TO_TICKS(4));
     }
 }
 

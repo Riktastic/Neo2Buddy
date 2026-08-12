@@ -39,19 +39,25 @@ input validation, and any NEO state transition it performs.
 
 ## Build-time Feature Flags
 
-This firmware exposes simple build-time options to disable hardware-dependent
-features when building for test rigs or minimal boards. From the project's
-firmware directory run `idf.py menuconfig` and look under "Neo2 Buddy
-Configuration" to toggle:
+This firmware exposes build-time options for lean boards and custom images.
+From the project's firmware directory run `idf.py menuconfig` and look under
+**Neo2 Buddy Configuration**, or use Image Builder / `sdkconfig.d` profile
+fragments (see [`../README.md`](../README.md)).
 
-- `Support battery` — enable/disable battery ADC helpers and UI reporting.
-- `Support microSD card` — enable `sd_card` mounting attempts; when disabled
-  SPIFFS is used exclusively.
-- `Support 1.3in OLED` — enable display support and any OLED init code.
+| Kconfig | `HAVE_*` macro | When off |
+|---------|----------------|----------|
+| `Support battery` | `HAVE_BATTERY` | No ADC battery helpers |
+| `Support microSD card` | `HAVE_SDCARD` | SPIFFS only |
+| `Support 1.3in OLED` | `HAVE_OLED` | No display init |
+| `Enable Wi-Fi and web portal` | `HAVE_WIFI_WEB` | UART + Neo USB only (no SoftAP/HTTP/cloud sync) |
+| `Enable Bluetooth HID keyboard` | `HAVE_BLE` | No NimBLE HID stack |
+| `Enable Applet Store` | `HAVE_STOCK_APPLETS` | No embedded stock applets / portal store (requires Wi-Fi/web) |
+| `Enable protected UART command console` | — | No serial REPL |
 
-When disabled the option defines are mapped into `include/board_config.h` as
-`HAVE_BATTERY`, `HAVE_SDCARD` and `HAVE_OLED` so source files may guard
-initialization or polling code with `#if HAVE_BATTERY` style checks.
+Macros are defined in `include/board_config.h` so sources can use
+`#if HAVE_WIFI_WEB` style guards. Optional components are still listed in
+`CMakeLists.txt` `REQUIRES` (ESP-IDF early expansion ignores `CONFIG_*` there);
+only the corresponding `.c` files are omitted when a feature is disabled.
 
 ## Pinout and Parts (reference for this dev kit)
 

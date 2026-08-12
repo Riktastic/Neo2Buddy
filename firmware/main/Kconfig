@@ -19,7 +19,30 @@ config SUPPORT_OLED
     default y
     help
       Build with OLED support for a small on-device status display. When
-      disabled only the web UI will be available for status and control.
+      disabled only the web UI (if enabled) or UART will be available for status.
+
+config SUPPORT_WIFI_WEB
+    bool "Enable Wi-Fi and web portal"
+    default y
+    help
+      SoftAP/STA Wi-Fi, captive DNS, HTTP portal, and cloud sync. When disabled
+      the buddy is UART + Neo USB only (no network stack for the portal).
+
+config SUPPORT_BLE
+    bool "Enable Bluetooth HID keyboard"
+    default y
+    help
+      NimBLE HID keyboard for Neo key passthrough and portal text relay.
+      Disable to shrink the image and free internal DRAM (also unset BT in
+      the matching sdkconfig profile fragment).
+
+config SUPPORT_STOCK_APPLETS
+    bool "Enable Applet Store (bundled SmartApplets)"
+    default y
+    depends on SUPPORT_WIFI_WEB
+    help
+      Embed stock .OS3KApp binaries and expose the portal Applet Store and
+      Flash Cards deck library. Requires the web portal.
 
 config BUDDY_RUN_SELF_TEST
     bool "Run boot self-test suite"
@@ -35,5 +58,23 @@ config BUDDY_UART_CMD
       Start an interactive command line on the serial port (115200). Use
       "login <password>" (same as the web portal) before Neo USB commands.
       Intended for development and automated testing over the CH340 UART.
+
+config BUDDY_NEO_LINK
+    bool "Enable Neo Link HID transport (archived — do not enable)"
+    default n
+    help
+      ARCHIVED / ABANDONED. Neo OS takes over with "emulating keyboard" while
+      USB is plugged; SmartApplets cannot keep a live chat UI. Sources remain
+      under archive/neo-link/ for research only. Leave this off.
+
+config BUDDY_NEO_LINK_AUTO_INSTALL_APPLET
+    bool "Auto-install/replace Neo Link Chat applet when Neo connects"
+    default n
+    depends on BUDDY_NEO_LINK
+    help
+      When enabled and the Neo is already in ASM/comms mode, compare the installed
+      Neo Link Chat applet (0xA1C0) to the firmware bundle and replace if missing
+      or outdated. Does not run on keyboard-mode plug-in (no automatic ASM flip).
+      Default off — use UART/portal `link install` when you change the applet.
 
 endmenu

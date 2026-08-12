@@ -77,6 +77,6 @@ Historical checklist from the AlphaTouch plan. Items marked **done** reflect the
 - [x] Specs actualized to Neo2 Buddy behavior.
 - [x] BLE scope disclosed (portal → host only).
 - [x] Keyboard-mode interruption disclosed (UI + guide).
-- [x] Fresh `idf.py build` + `package-release.ps1 -Version 1.0.0-beta.1`.
+- [x] Fresh `idf.py build` + `package-release.ps1 -Version 1.0.0`.
 - [ ] LICENSE chosen and added at repo root.
 - [ ] Hardware soak + BLE host matrix notes beyond release README.

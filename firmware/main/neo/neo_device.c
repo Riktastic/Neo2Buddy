@@ -448,6 +448,11 @@ esp_err_t neo_device_read_extended(uint8_t *buffer, size_t capacity, size_t expe
         if (neo_message_command(&response) == NEO_RESPONSE_BLOCK_READ_EMPTY) {
             neo_debug_event("read_extended empty block at %u/%u", (unsigned)*out_length,
                             (unsigned)expected_length);
+            /* NeoTools stops early and returns a partial buffer; treat short reads
+             * as failure so applet fetch cannot silently produce a truncated .os3kapp. */
+            if (*out_length < expected_length) {
+                return ESP_ERR_INVALID_SIZE;
+            }
             return ESP_OK;
         }
         if (neo_message_command(&response) != NEO_RESPONSE_BLOCK_READ) {

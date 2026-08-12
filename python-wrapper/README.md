@@ -4,11 +4,16 @@ HTTP client and CLI for a Neo2 Buddy on your network. Same `/api/v1` surface as
 the web portal: backups, Neo USB ops, local files, Wi‑Fi, cloud sync, BLE text
 relay, logs, and diagnostics.
 
+Requires a firmware build with the **Wi‑Fi / web portal** enabled (Full, Headless,
+or No-BLE profiles). UART-slim images have no HTTP API — use the serial console
+instead.
+
 | | |
 |--|--|
 | **Folder** | `python-wrapper/` |
 | **Import** | `neo2buddy_wrapper` |
 | **CLI** | `neo2buddy` or `neo2buddy-wrapper` |
+| **Version** | `1.0.0` |
 | **Default AP** | `http://192.168.4.1` (password `neo2buddy` until you change it) |
 
 ## Install
@@ -72,6 +77,12 @@ neo2buddy neo applets
 neo2buddy neo read 1
 neo2buddy neo write 2 document.txt
 neo2buddy neo install applet.os3kapp
+
+neo2buddy store list
+neo2buddy store install flash-cards
+neo2buddy decks list
+neo2buddy decks push en-nl-basic
+neo2buddy decks save my-vocab cards.txt --name "My vocab"
 
 # BLE: portal text → paired host (not Neo key passthrough)
 neo2buddy ble status
@@ -139,6 +150,9 @@ Examples: [`examples/`](examples/).
 | `read_file_text()` / `write_file_text()` / `clear_file()` | Per-slot I/O |
 | `write_file_by_target()` / `clear_file_by_target()` | By name or file-space |
 | `install_applet()` / `remove_applet()` / `download_applet()` | SmartApplets |
+| `list_stock_applets()` / `install_stock_applet(slug)` | Applet Store catalog / install |
+| `list_flash_decks()` / `get_flash_deck()` / `save_flash_deck()` | Named Flash Cards sets |
+| `push_flash_deck()` / `delete_flash_deck()` / `upload_flash_deck_text()` | Push deck to Neo |
 | `neo_info()` / `neo_mode()` / `neo_debug()` | Diagnostics |
 | `space_available()` / `space_used()` | Capacity |
 | `get_applet_settings()` / `set_applet_settings()` | Applet settings JSON |

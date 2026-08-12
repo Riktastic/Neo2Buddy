@@ -74,7 +74,8 @@ Auth: owner password (hashed). State-changing routes require session/token after
 - `idf.py build` for production firmware.
 - Hardware: Neo 5 V USB‑B, OTG1 data, OLED/SD optional, BLE pair + portal send, backup→keyboard return.
 - Browser: mobile + desktop; confirm keyboard-interrupt dialogs and BLE scope copy.
-- Release: `firmware/scripts/package-release.ps1 -Version <semver>`.
+- Release: `firmware/scripts/package-release.ps1 -Version <semver>` (Full + Setup zip).
+  Lean profiles: `package-profiles.ps1` / Image Builder (`flasher/`).
 
 ## Risks and mitigations
 

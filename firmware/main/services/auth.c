@@ -115,15 +115,19 @@ esp_err_t auth_login(const char *password, char *out_token, size_t out_token_siz
     for (int i = 0; i < 32; ++i) sprintf(&tok[i*2], "%02x", tmp[i]);
     tok[64] = '\0';
 
-    /* store in NVS */
+    /* Expiry must be set before store_token — NVS persists token_exp with the token. */
+    current_token_exp = ((uint64_t)esp_timer_get_time() / 1000000ULL) + (15 * 60);
     esp_err_t r = store_token(tok);
     if (r == ESP_OK) {
-        strncpy(current_token, tok, sizeof(current_token));
-        /* set expiry (default 15 minutes) */
-        current_token_exp = ((uint64_t)esp_timer_get_time() / 1000000ULL) + (15 * 60);
+        strncpy(current_token, tok, sizeof(current_token) - 1);
+        current_token[sizeof(current_token) - 1] = '\0';
         strncpy(out_token, tok, out_token_size);
+        if (out_token_size > 0) {
+            out_token[out_token_size - 1] = '\0';
+        }
         return ESP_OK;
     }
+    current_token_exp = 0;
     return r;
 }
 
@@ -158,10 +162,10 @@ bool auth_check_token(const char *token) {
         nvs_close(h);
     }
     if (strcmp(token, current_token) != 0) return false;
-    if (current_token_exp != 0) {
-        uint64_t now = (uint64_t)esp_timer_get_time() / 1000000ULL;
-        if (now > current_token_exp) return false; /* expired */
-    }
+    /* Tokens without an expiry (legacy bug) are not accepted — force re-login. */
+    if (current_token_exp == 0) return false;
+    uint64_t now = (uint64_t)esp_timer_get_time() / 1000000ULL;
+    if (now > current_token_exp) return false; /* expired */
     return true;
 }
 

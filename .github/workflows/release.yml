@@ -1,0 +1,191 @@
+# Publish GitHub Release assets:
+# - neo2buddy-setup-*.zip (Python source + images)
+# - neo2buddy-firmware-*.zip (raw bins)
+# - neo2buddy-setup-windows-*.zip (Neo2BuddySetup.exe folder)
+# - neo2buddy-setup-macos-*.zip (.app)
+# - neo2buddy-setup-linux-*.zip (binary folder)
+#
+# Prefers pre-built zips under releases/<version>/ when present; otherwise
+# builds native apps from firmware images in that folder (firmware must exist).
+
+name: GitHub Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without v prefix (e.g. 1.0.0)"
+        required: true
+        default: "1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+
+  native:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows
+          - os: macos-latest
+            artifact: macos
+          - os: ubuntu-22.04
+            artifact: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Linux Tk
+        if: matrix.artifact == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk
+
+      - name: Stage flasher + images
+        shell: bash
+        run: |
+          V="${{ needs.resolve.outputs.version }}"
+          IMG="releases/$V"
+          test -f "$IMG/littlefs.bin"
+          STAGE="flasher/_native_stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/images"
+          cp -R flasher/neo2buddy_flasher "$STAGE/"
+          cp flasher/run_setup.py flasher/neo2buddy_setup.spec "$STAGE/"
+          cp "$IMG/bootloader.bin" "$IMG/partition-table.bin" \
+             "$IMG/alpha_smart_neo2_buddy.bin" "$IMG/littlefs.bin" "$STAGE/images/"
+
+      - name: Build with PyInstaller
+        shell: bash
+        working-directory: flasher/_native_stage
+        run: |
+          python -m pip install -U pip
+          python -m pip install "pyinstaller>=6.3" -r ../requirements.txt
+          python -m PyInstaller --noconfirm neo2buddy_setup.spec
+
+      - name: Package Windows zip
+        if: matrix.artifact == 'windows'
+        shell: bash
+        run: |
+          V="${{ needs.resolve.outputs.version }}"
+          DIST="flasher/_native_stage/dist/Neo2BuddySetup"
+          echo "Neo2 Buddy Setup $V (Windows)" > "$DIST/README.txt"
+          echo "Run Neo2BuddySetup.exe — no Python install needed." >> "$DIST/README.txt"
+          mkdir -p "releases/$V"
+          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/neo2buddy-setup-windows-$V.zip" Neo2BuddySetup)
+
+      - name: Package macOS zip
+        if: matrix.artifact == 'macos'
+        shell: bash
+        run: |
+          V="${{ needs.resolve.outputs.version }}"
+          APP="flasher/_native_stage/dist/Neo2BuddySetup.app"
+          test -d "$APP"
+          mkdir -p "releases/$V"
+          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/neo2buddy-setup-macos-$V.zip" Neo2BuddySetup.app)
+
+      - name: Package Linux zip
+        if: matrix.artifact == 'linux'
+        shell: bash
+        run: |
+          V="${{ needs.resolve.outputs.version }}"
+          DIST="flasher/_native_stage/dist/Neo2BuddySetup"
+          echo "Neo2 Buddy Setup $V (Linux)" > "$DIST/README.txt"
+          echo "Run ./Neo2BuddySetup — may need: sudo apt install python3-tk (build host only)." >> "$DIST/README.txt"
+          mkdir -p "releases/$V"
+          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/neo2buddy-setup-linux-$V.zip" Neo2BuddySetup)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-${{ matrix.artifact }}
+          path: releases/${{ needs.resolve.outputs.version }}/neo2buddy-setup-${{ matrix.artifact }}-*.zip
+
+  release:
+    needs: [resolve, native]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: _native_out
+
+      - name: Collect release files
+        id: assets
+        shell: bash
+        run: |
+          V="${{ needs.resolve.outputs.version }}"
+          DIR="releases/$V"
+          mkdir -p "$DIR"
+          find _native_out -name 'neo2buddy-setup-*.zip' -exec cp {} "$DIR/" \;
+
+          SETUP="$DIR/neo2buddy-setup-$V.zip"
+          FW="$DIR/neo2buddy-firmware-$V.zip"
+          if [ ! -f "$SETUP" ] || [ ! -f "$FW" ]; then
+            echo "::error::Missing Python setup/firmware zips in $DIR (run package-release.ps1 and commit them)."
+            ls -la "$DIR" || true
+            exit 1
+          fi
+
+          {
+            echo "files<<EOF"
+            ls -1 "$DIR"/neo2buddy-setup-*.zip "$DIR"/neo2buddy-firmware-*.zip
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          ls -la "$DIR"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: Neo2 Buddy ${{ needs.resolve.outputs.version }}
+          generate_release_notes: true
+          body: |
+            ## Install firmware
+
+            ### Native apps (no Python)
+
+            | Platform | Download |
+            |----------|----------|
+            | Windows | `neo2buddy-setup-windows-${{ needs.resolve.outputs.version }}.zip` → run `Neo2BuddySetup.exe` |
+            | macOS | `neo2buddy-setup-macos-${{ needs.resolve.outputs.version }}.zip` → open `Neo2BuddySetup.app` |
+            | Linux | `neo2buddy-setup-linux-${{ needs.resolve.outputs.version }}.zip` → run `Neo2BuddySetup` |
+
+            ### Python (all platforms)
+
+            `neo2buddy-setup-${{ needs.resolve.outputs.version }}.zip` — unzip and run `Run Setup.bat` / `./run-setup.sh` (needs Python 3.10+).
+
+            ### Firmware bins only
+
+            `neo2buddy-firmware-${{ needs.resolve.outputs.version }}.zip` for esptool / advanced flashing.
+
+            ## Docs
+
+            - Portal demo: https://riktastic.github.io/Neo2Buddy/
+            - Project: https://github.com/Riktastic/Neo2Buddy
+          files: ${{ steps.assets.outputs.files }}

@@ -74,3 +74,21 @@
 #else
 #define HAVE_OLED 0
 #endif
+
+#ifdef CONFIG_SUPPORT_WIFI_WEB
+#define HAVE_WIFI_WEB 1
+#else
+#define HAVE_WIFI_WEB 0
+#endif
+
+#ifdef CONFIG_SUPPORT_BLE
+#define HAVE_BLE 1
+#else
+#define HAVE_BLE 0
+#endif
+
+#ifdef CONFIG_SUPPORT_STOCK_APPLETS
+#define HAVE_STOCK_APPLETS 1
+#else
+#define HAVE_STOCK_APPLETS 0
+#endif

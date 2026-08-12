@@ -11,6 +11,22 @@ from .client import ALPHAWORD_APPLET_ID, Neo2BuddyClient
 from .exceptions import BusyError, Neo2BuddyError
 
 
+def _cards_from_pipe_text(text: str) -> list[dict[str, str]]:
+    cards: list[dict[str, str]] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or "|" not in line:
+            continue
+        front, back = line.split("|", 1)
+        front = front.strip()[:23]
+        back = back.strip()[:23]
+        if front and back:
+            cards.append({"front": front, "back": back})
+        if len(cards) >= 16:
+            break
+    return cards
+
+
 def _progress(st: dict) -> None:
     phase = st.get("phase") or "?"
     cur = st.get("current")
@@ -258,6 +274,81 @@ def cmd_neo(client: Neo2BuddyClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_store(client: Neo2BuddyClient, args: argparse.Namespace) -> int:
+    if args.store_cmd == "install":
+        data = client.install_stock_applet(args.slug)
+        print(json.dumps(data, indent=2) if args.json else f"Installed {args.slug}.")
+        return 0
+
+    catalog = client.list_stock_applets()
+    if args.json:
+        print(json.dumps(catalog, indent=2))
+        return 0
+    applets = catalog.get("applets") if isinstance(catalog, dict) else None
+    if not isinstance(applets, list):
+        print(catalog)
+        return 0
+    for app in applets:
+        ver = f"{app.get('version_major', '?')}.{app.get('version_minor', '?')}{app.get('version_rev') or ''}"
+        aid = app.get("applet_id")
+        aid_s = f"0x{int(aid):04X}" if isinstance(aid, int) else "?"
+        bundled = "bundled" if app.get("bundled") else "missing"
+        print(
+            f"{app.get('slug'):12}  {app.get('name'):14}  {aid_s}  v{ver}  "
+            f"{app.get('category')}  {bundled}  {app.get('bytes', 0)} B"
+        )
+    print(f"\n{catalog.get('bundled_count', 0)} bundled in firmware")
+    return 0
+
+
+def cmd_decks(client: Neo2BuddyClient, args: argparse.Namespace) -> int:
+    if args.decks_cmd == "list":
+        decks = client.list_flash_decks()
+        if args.json:
+            print(json.dumps(decks, indent=2))
+            return 0
+        for d in decks:
+            print(f"{d.get('id'):16}  {d.get('name'):24}  {d.get('cards')} cards")
+        return 0
+
+    if args.decks_cmd == "get":
+        deck = client.get_flash_deck(args.id)
+        print(json.dumps(deck, indent=2))
+        return 0
+
+    if args.decks_cmd == "save":
+        raw = Path(args.file).read_text(encoding="utf-8")
+        if args.file.lower().endswith(".json"):
+            payload = json.loads(raw)
+            name = args.name or payload.get("name") or args.id
+            cards = payload.get("cards") or []
+        else:
+            name = args.name or args.id
+            cards = _cards_from_pipe_text(raw)
+        if not cards:
+            print("error: no cards found (use JSON or front|back lines)", file=sys.stderr)
+            return 1
+        data = client.save_flash_deck(args.id, name=name, cards=cards)
+        print(json.dumps(data, indent=2) if args.json else f"Saved {args.id} ({len(cards)} cards).")
+        return 0
+
+    if args.decks_cmd == "push":
+        data = client.push_flash_deck(args.id)
+        print(json.dumps(data, indent=2) if args.json else f"Pushed {args.id} to Neo.")
+        return 0
+
+    if args.decks_cmd == "delete":
+        data = client.delete_flash_deck(args.id)
+        print(json.dumps(data, indent=2) if args.json else f"Deleted {args.id}.")
+        return 0
+
+    # upload: direct front|back to Neo (legacy path)
+    text = Path(args.file).read_text(encoding="utf-8")
+    data = client.upload_flash_deck_text(text)
+    print(json.dumps(data, indent=2) if args.json else "Uploaded deck to Neo Flash Cards.")
+    return 0
+
+
 def cmd_files(client: Neo2BuddyClient, args: argparse.Namespace) -> int:
     if args.files_cmd == "view":
         text = client.view_backup(args.name)
@@ -394,6 +485,34 @@ def build_parser() -> argparse.ArgumentParser:
     nrm.add_argument("applet_id", type=lambda x: int(x, 0))
     nrm.set_defaults(func=cmd_neo)
     neo_sub.add_parser("remove-all", help="Remove all applets").set_defaults(func=cmd_neo)
+
+    st_store = sub.add_parser("store", help="Stock App Store (bundled SmartApplets)")
+    store_sub = st_store.add_subparsers(dest="store_cmd", required=True)
+    store_sub.add_parser("list", help="List bundled stock applets").set_defaults(func=cmd_store)
+    sti = store_sub.add_parser("install", help="Install a stock applet by slug")
+    sti.add_argument("slug", help="e.g. flash-cards, snake, touch-type")
+    sti.set_defaults(func=cmd_store)
+
+    dk = sub.add_parser("decks", help="Flash Cards deck library")
+    dk_sub = dk.add_subparsers(dest="decks_cmd", required=True)
+    dk_sub.add_parser("list", help="List named decks on the buddy").set_defaults(func=cmd_decks)
+    dkg = dk_sub.add_parser("get", help="Show one deck (JSON)")
+    dkg.add_argument("id")
+    dkg.set_defaults(func=cmd_decks)
+    dks = dk_sub.add_parser("save", help="Create/update a deck from JSON or front|back text")
+    dks.add_argument("id", help="Deck id (e.g. en-nl-basic)")
+    dks.add_argument("file", help=".json with {name,cards} or front|back lines")
+    dks.add_argument("--name", help="Display name (defaults to id / JSON name)")
+    dks.set_defaults(func=cmd_decks)
+    dkp = dk_sub.add_parser("push", help="Push a buddy deck to Neo Flash Cards")
+    dkp.add_argument("id")
+    dkp.set_defaults(func=cmd_decks)
+    dkd = dk_sub.add_parser("delete", help="Delete a deck (not en-nl-basic)")
+    dkd.add_argument("id")
+    dkd.set_defaults(func=cmd_decks)
+    dku = dk_sub.add_parser("upload", help="Upload front|back text straight to Neo (no library save)")
+    dku.add_argument("file")
+    dku.set_defaults(func=cmd_decks)
 
     fl = sub.add_parser("files", help="Buddy-local backup file management")
     fl_sub = fl.add_subparsers(dest="files_cmd", required=True)

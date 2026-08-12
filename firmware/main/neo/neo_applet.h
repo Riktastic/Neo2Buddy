@@ -15,7 +15,7 @@
  * PROTOCOL COMMANDS USED (via neo_device + system dialogue)
  * ---------------------------------------------------------
  *   LIST_APPLETS   — batched headers (7 per request)
- *   READ_APPLET    — READ_FILE response + read_extended
+ *   READ_APPLET    — READ_FILE response + read_extended (NeoTools applets fetch)
  *   WRITE_APPLET   — reserve space, write_applet_content, FINALIZE
  *   REMOVE_APPLET / ERASE_APPLETS
  */

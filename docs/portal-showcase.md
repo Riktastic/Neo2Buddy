@@ -1,6 +1,6 @@
 # Portal showcase (live demo)
 
-> **Beta showcase.** The portal and firmware are work in progress. Testing so far is on a **Dutch Neo2** only; UK/US keyboard layouts may differ slightly for live typing and Bluetooth.
+> **Version 1.0 showcase.** Static sample data for the web portal. Primary testing is on a **Dutch Neo2**; UK/US keyboard layouts may differ slightly for live typing and Bluetooth.
 
 The Neo2 Buddy **web admin portal** is a browser UI served from the ESP32 over Wi‑Fi. You can explore a **static showcase** with sample data before flashing hardware.
 
@@ -18,7 +18,7 @@ Hardware photos (split cable and bench setup): [neo2-usb-wiring.md](neo2-usb-wir
 
 | Page | URL |
 |------|-----|
-| **Documents** (backups, Neo files, SmartApplets) | https://riktastic.github.io/Neo2Buddy/ |
+| **Documents** (backups, Neo files, SmartApplets / Applet Store) | https://riktastic.github.io/Neo2Buddy/ |
 | **Typing & Bluetooth** (live viewer, Bluetooth pairing) | https://riktastic.github.io/Neo2Buddy/typing.html |
 | **User guide** | https://riktastic.github.io/Neo2Buddy/user-guide.html |
 
@@ -26,11 +26,11 @@ Demo mode activates automatically on `*.github.io`. Sample content includes:
 
 - Neo connected in **keyboard mode** with live typing animation
 - Four **documents on the Neo** and two **local backups**
-- Four **SmartApplets** (AlphaWord + language applets)
+- Four **SmartApplets** (AlphaWord + language applets) and the portal **Applet Store** UI
 - **Cloud sync** configured (WebDAV example — test/upload are no-ops)
 - **Settings** and Wi‑Fi scan examples
 
-Nothing talks to real USB or cloud services in the showcase.
+Nothing talks to real USB or cloud services in the showcase. The live demo matches the **Full** firmware profile (Wi‑Fi portal). UART-slim images have no portal.
 
 ## Local preview
 

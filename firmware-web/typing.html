@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="application-name" content="Neo2 Buddy Portal">
+  <meta name="application-version" content="1.0.0">
+  <meta name="release-date" content="2026-08-12">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f3f0e8">
   <title>Live typing &amp; Bluetooth — Neo2 Buddy</title>
-  <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/portal.css">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/portal.css?v=1.0.0">
 </head>
 <body data-page="typing">
   <main class="app-shell">
@@ -19,10 +20,10 @@
       </div>
       <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
         <nav class="portal-nav" aria-label="Portal sections">
-          <a class="portal-nav-link" href="index.html">Documents</a>
+          <a class="portal-nav-link" href="index.html">Documents &amp; Applets</a>
           <a class="portal-nav-link is-active" href="typing.html" aria-current="page">Typing &amp; Bluetooth</a>
         </nav>
-        <div class="status-chip"><span class="dot" aria-hidden="true"></span><span id="connection">Looking for device</span></div>
+        <div class="status-chip"><span class="dot" aria-hidden="true"></span><span id="connection">Not signed in</span></div>
         <button id="logs-button" class="icon-button" type="button" title="View logs" aria-label="View logs" hidden>
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 19V6.2C4 5.0799 4 4.51984 4.21799 4.09202C4.40973 3.71569 4.71569 3.40973 5.09202 3.21799C5.51984 3 6.0799 3 7.2 3H16.8C17.9201 3 18.4802 3 18.908 3.21799C19.2843 3.40973 19.5903 3.71569 19.782 4.09202C20 4.51984 20 5.0799 20 6.2V17H6C4.89543 17 4 17.8954 4 19ZM4 19C4 20.1046 4.89543 21 6 21H20M9 7H15M9 11H15M19 17V21" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -45,8 +46,8 @@
     </section>
 
     <section class="stat-grid typing-stat-grid" aria-label="Connection status">
-      <article class="stat-card neo-card"><span class="label">NEO connection</span><strong id="neo-connection">Looking</strong><small id="neo-connection-detail">Connect the NEO with USB</small></article>
-      <article class="stat-card neo-card"><span class="label">Model</span><strong id="neo-model">--</strong><small id="neo-model-detail">Reported by the NEO when connected</small></article>
+      <article class="stat-card neo-card"><span class="label">NEO connection</span><strong id="neo-connection">Sign in</strong><small id="neo-connection-detail">Sign in to see Neo USB status</small><div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap"><button class="button" id="neo-restart" type="button" data-auth-required hidden title="Leave ASM/manager mode and return Neo to keyboard emulation">Keyboard mode</button></div></article>
+      <article class="stat-card neo-card"><span class="label">Model</span><strong id="neo-model">—</strong><small id="neo-model-detail">Available after sign-in</small></article>
     </section>
 
     <div id="portal-notices" class="portal-notices" hidden aria-live="polite"></div>
@@ -56,7 +57,7 @@
         <article class="panel monitor-panel">
           <div class="panel-heading">
             <div><p class="eyebrow">LIVE KEYBOARD</p><h2>What the NEO is typing</h2></div>
-            <div class="live-controls" style="display:flex;align-items:center;gap:0.5rem">
+            <div class="live-controls" style="display:flex;align-items:center;gap:0.5rem" data-auth-required hidden>
               <button class="button" id="pause-live" type="button" title="Pause updates">Pause</button>
               <button class="button" id="toggle-raw" type="button" title="Toggle raw HID view">Raw</button>
               <button class="button" id="clear-live" type="button" title="Clear monitor">Clear</button>
@@ -64,7 +65,7 @@
             </div>
           </div>
           <p class="file-size-guidance" id="live-keyboard-guidance">Updates only while this tab is open and Neo is in keyboard mode. No file or applet requests run here. If you open Documents and run Scan or Backup, Neo enters ASM mode — live typing and Bluetooth keystrokes pause until keyboard mode returns.</p>
-          <div id="live-text" class="live-text" aria-live="polite" role="log">Waiting for NEO keyboard input...</div>
+          <div id="live-text" class="live-text" aria-live="polite" role="log">Sign in to monitor live Neo keyboard input.</div>
         </article>
       </section>
 
@@ -72,23 +73,24 @@
         <p class="eyebrow">BLUETOOTH</p>
         <h2>Wireless keyboard</h2>
         <div class="action-list">
-          <button class="action-row" type="button" data-action="open-pairing">
+          <button class="action-row" type="button" data-action="open-pairing" data-auth-required hidden>
             <span class="action-icon blue" aria-hidden="true">⌨</span>
             <span><b>Pair keyboard</b><small>Bond a phone or PC — Neo keys pass through while connected</small></span><i>›</i>
           </button>
-          <button class="action-row" type="button" data-action="open-ble-send">
+          <button class="action-row" type="button" data-action="open-ble-send" data-auth-required hidden>
             <span class="action-icon blue">TXT</span>
             <span><b>Send text</b><small>Paste portal text to the paired Bluetooth host</small></span><i>›</i>
           </button>
         </div>
-        <p class="file-size-guidance" style="margin-top:14px">Pairing stays in keyboard mode. While Bluetooth is connected, any ASM action on the Documents page may stop keystrokes reaching your paired device.</p>
+        <p class="file-size-guidance portal-guest-only">Sign in to pair Bluetooth and send text to a wireless host.</p>
+        <p class="file-size-guidance" style="margin-top:14px" data-auth-required hidden>Pairing stays in keyboard mode. While Bluetooth is connected, any ASM action on the Documents page may stop keystrokes reaching your paired device.</p>
       </aside>
     </section>
   </main>
 
   <footer class="portal-footer" aria-hidden="false">
     <div class="portal-footer-inner">
-      <div class="footer-left"><span id="footer-app-name">Neo2 Buddy Portal</span> <span id="footer-version">v0.9.0-beta</span> <span class="footer-beta-note" title="Tested on Dutch Neo2 only; other layouts may differ">Beta · WIP</span></div>
+      <div class="footer-left"><span id="footer-app-name">Neo2 Buddy Portal</span> <span id="footer-version">v1.0.0</span> <span class="footer-beta-note" title="Primary testing on Dutch Neo2; other layouts may differ for live typing and Bluetooth">1.0</span></div>
       <div class="footer-right">
         <a href="https://riktastic.github.io/Neo2Buddy/" target="_blank" rel="noopener noreferrer">Live demo</a>
         <a href="index.html">Documents</a>
@@ -98,7 +100,7 @@
     </div>
   </footer>
 
-  <dialog id="action-dialog"><form method="dialog" id="action-dialog-form"><button class="close" type="button" id="action-dialog-close" aria-label="Close">×</button><p class="eyebrow" id="dialog-label">ACTION</p><h2 id="dialog-title">Not connected</h2><p id="dialog-copy">This interactive preview will connect to the device API when firmware endpoints are ready.</p><div id="dialog-actions-default"><button class="button primary" type="submit">Done</button></div><div id="dialog-actions-pairing" hidden><p id="ble-status-line" class="settings-note">Checking Bluetooth status...</p><button class="button primary" type="button" id="ble-start-pairing">Start pairing (2 min)</button><button class="button" type="button" id="ble-stop-pairing">Stop pairing</button></div><div id="dialog-actions-ble-send" hidden><label>Text to send as keystrokes<textarea id="ble-send-text" rows="5" placeholder="Paste or type the text to send..."></textarea></label><pre id="ble-preview-box" class="document-preview" hidden></pre><p id="ble-send-status" class="dialog-status" aria-live="polite"></p><button class="button" type="button" id="ble-preview-btn">Preview</button><button class="button primary" type="button" id="ble-confirm-send">Send keystrokes</button><button class="button" type="button" id="ble-cancel-send">Cancel</button></div></form></dialog>
+  <dialog id="action-dialog"><form method="dialog" id="action-dialog-form"><div class="dialog-heading settings-heading"><div><p class="eyebrow" id="dialog-label">ACTION</p><h2 id="dialog-title">Not connected</h2></div><button class="close-dialog" type="button" id="action-dialog-close" aria-label="Close">&times;</button></div><p id="dialog-copy">This interactive preview will connect to the device API when firmware endpoints are ready.</p><div id="dialog-actions-default" class="dialog-actions"><button class="button primary" type="submit">Done</button></div><div id="dialog-actions-pairing" hidden><p id="ble-status-line" class="settings-note">Checking Bluetooth status...</p><p id="ble-passkey-line" class="settings-note"><strong>No PIN needed.</strong> On your phone or PC, choose <em>Neo2 Buddy</em> and tap <strong>Pair</strong> / <strong>Connect</strong>. If a 6-digit code appears, tap Pair/OK — do not type a PIN. After a firmware update, remove Neo2 Buddy from the host’s Bluetooth list and use <strong>Forget bonded hosts</strong> here first (Windows caches HID descriptors).</p><ul id="ble-bonds-list" class="settings-note" hidden></ul><div class="dialog-actions"><button class="button primary" type="button" id="ble-start-pairing">Start pairing (3 min)</button><button class="button" type="button" id="ble-stop-pairing">Stop pairing</button><button class="button danger-action" type="button" id="ble-clear-bonds">Forget bonded hosts</button></div></div><div id="dialog-actions-ble-send" hidden><label>Text to send as keystrokes<textarea id="ble-send-text" rows="5" placeholder="Paste or type the text to send..."></textarea></label><pre id="ble-preview-box" class="document-preview" hidden></pre><p id="ble-send-status" class="dialog-status" aria-live="polite"></p><div class="dialog-actions"><button class="button" type="button" id="ble-preview-btn">Preview</button><button class="button primary" type="button" id="ble-confirm-send">Send keystrokes</button><button class="button" type="button" id="ble-cancel-send">Cancel</button></div></div></form></dialog>
 
   <dialog id="format-sd-dialog" class="format-dialog">
     <form id="format-sd-form">
@@ -193,14 +195,24 @@
           <label>Hotspot password<input id="hotspot-password" type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank to keep current"></label>
         </div>
 
-        <div id="settings-home-fields" hidden>
+        <div id="settings-saved-wifi" class="settings-saved-wifi">
+          <h4 class="settings-subheading">Saved home networks</h4>
+          <ul id="wifi-saved-list" class="wifi-saved-list" aria-label="Saved Wi‑Fi networks"></ul>
+          <p class="field-hint">Save up to 4 networks (home Wi‑Fi and a phone hotspot). These stay available when you switch to Home network. On join, the buddy prefers the last used network, then the strongest saved network in range.</p>
           <div class="wifi-row settings-wifi-row">
             <label>Available networks
               <select id="wifi-ssid"><option value="">(scan to list)</option></select>
             </label>
-            <button type="button" class="button" id="wifi-scan-btn" title="Scan again">Scan</button>
+            <button type="button" class="button icon-action icon-action-only" id="wifi-scan-btn" title="Scan for Wi‑Fi networks" aria-label="Scan Wi‑Fi">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/></svg>
+              <span class="btn-label visually-hidden">Scan</span>
+            </button>
           </div>
-          <label>Home Wi‑Fi password<input id="wifi-password" type="password" autocomplete="new-password" placeholder="Leave blank to keep current"></label>
+          <label>Wi‑Fi password<input id="wifi-password" type="password" autocomplete="new-password" placeholder="Leave blank to keep current"></label>
+          <button type="button" class="button small" id="wifi-add-btn">Add / update saved network</button>
+        </div>
+
+        <div id="settings-home-fields" hidden>
           <label class="toggle-row"><span><b>Use DHCP</b><small>When enabled the device obtains IP settings automatically.</small></span><input id="wifi-dhcp" type="checkbox" checked><span class="toggle-track" aria-hidden="true"></span></label>
           <div id="static-ip-fields" hidden>
             <label>IP address<input id="wifi-ip" placeholder="192.168.1.50"></label>
@@ -208,7 +220,7 @@
             <label>Gateway<input id="wifi-gateway" placeholder="192.168.1.1"></label>
             <label>DNS<input id="wifi-dns" placeholder="8.8.8.8"></label>
           </div>
-          <p class="field-hint network-switch-hint">Switching modes restarts the buddy. Your saved home Wi‑Fi details are kept so you can switch back later.</p>
+          <p class="field-hint network-switch-hint">Switching modes restarts the buddy. Saved home networks are kept so you can switch back later.</p>
         </div>
       </section>
       <p class="settings-note" id="settings-note">These preferences are saved in this portal preview. Firmware settings will be applied when the device settings API is available.</p>
@@ -256,7 +268,24 @@
     </form>
   </dialog>
 
-  <script src="js/demo.js"></script>
-  <script src="js/app.js"></script>
+  <script>
+  (function () {
+    var ver = (document.querySelector('meta[name="application-version"]') || {}).content || '1';
+    var bust = '?v=' + encodeURIComponent(ver);
+    var list = ['js/core.js', 'js/settings.js', 'js/typing.js'];
+    if (/\.github\.io$/i.test(location.hostname) || /[?&]demo=1(?:&|$)/.test(location.search)) {
+      list.unshift('js/demo.js');
+    }
+    var n = 0;
+    function next() {
+      if (n >= list.length) return;
+      var s = document.createElement('script');
+      s.src = list[n++] + bust;
+      s.onload = s.onerror = next;
+      document.body.appendChild(s);
+    }
+    next();
+  })();
+  </script>
 </body>
 </html>

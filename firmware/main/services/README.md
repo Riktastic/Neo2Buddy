@@ -29,18 +29,26 @@ Platform-specific helpers consumed by `main/`, `neo/`, and `web/`. Hardware
 
 ## Conventions
 
-- **`board_config.h`** — pins and `HAVE_*` feature flags; check before calling SD/OLED/BLE APIs.
+- **`board_config.h`** — pins and `HAVE_*` feature flags; check before calling SD/OLED/BLE/Wi‑Fi APIs.
 - **NVS namespaces** — `auth`, `device` (settings), `cloud_sync`; never return secrets over HTTP.
 - **Async workers** — SD format and cloud sync run in tasks; HTTP returns `started: true` immediately.
 - **File headers** — each `.c`/`.h` starts with `@file` / `@brief` explaining what and why.
 
+### Feature profiles
+
+Lean images compile out optional services via Kconfig (`SUPPORT_WIFI_WEB`, `SUPPORT_BLE`, …).
+When Wi‑Fi/web or BLE is off, stub sources (`wifi_manager_stub.c`, `cloud_sync_stub.c`,
+`ble_hid_stub.c`) keep the same symbols so Neo USB and UART code still link.
+UART-slim builds skip SoftAP, HTTP, captive DNS, and cloud sync entirely — use the
+serial REPL instead. See [`../README.md`](../README.md) and [`../../README.md`](../../README.md).
+
 ---
 
-## Boot order (typical)
+## Boot order (typical Full build)
 
 1. `settings_load` → `auth_init` → `device_status_init` → `log_buffer_init`
-2. `wifi_manager_init` (AP or STA per settings)
+2. `wifi_manager_init` (AP or STA per settings) — skipped / stubbed when `HAVE_WIFI_WEB` is off
 3. `usb_host_neo_init`, `neo_autobackup_init`, optional `sd_card_mount_if_present`
 4. `display_init`, `battery_monitor_init`, `cloud_sync_init`, `httpd` + `web_api_register`
 
-See `main/app_main.c` for the authoritative sequence on your build.
+See `main.c` for the authoritative sequence on your build.

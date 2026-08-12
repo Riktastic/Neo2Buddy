@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f3f0e8">
   <title>Neo2 Buddy — User guide</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/portal.css">
 </head>
 <body class="setup-page">
@@ -21,7 +21,7 @@
 
     <article class="panel setup-panel" style="display:grid;gap:1.25rem;max-width:42rem">
       <p class="file-size-guidance" style="margin:0;padding:12px 14px;border:1px solid #d4a72c;border-radius:4px;background:#fbf0d4;color:#5a4518">
-        <strong>Beta — work in progress.</strong> Firmware and portal behaviour may change. So far this has only been tested with a <strong>Dutch Neo2</strong>. UK, US, and other regional keyboard layouts may differ slightly for live typing, Bluetooth passthrough, and file import/export — we have not been able to test other variants yet.
+        <strong>Version 1.0.</strong> Primary testing so far is with a <strong>Dutch Neo2</strong>. UK, US, and other regional keyboard layouts may differ slightly for live typing, Bluetooth passthrough, and file import/export — layout feedback is welcome.
       </p>
       <p class="file-size-guidance" style="margin:0;padding:12px 14px;border-left:3px solid var(--blue);background:#e9f2f3">
         <strong>Try the portal first:</strong>
@@ -33,7 +33,7 @@
       <section>
         <h2>1. First connection</h2>
         <ol>
-          <li>Power the buddy and join its Wi‑Fi hotspot (default name starts with <strong>Neo2</strong>).</li>
+          <li>Flash the <strong>Full</strong> firmware profile (or another Wi‑Fi build) with <strong>Neo2 Buddy Setup</strong>, then power the buddy and join its Wi‑Fi hotspot (default name starts with <strong>Neo2</strong>).</li>
           <li>Open <code>http://192.168.4.1</code> (or the address shown on the OLED).</li>
           <li>Complete first-time setup: choose Direct access or Home network, set a <strong>portal password</strong> (8+ characters).</li>
           <li>After reboot, sign in with that password. Portal sign-in is required by default.</li>
@@ -45,10 +45,10 @@
         <ul>
           <li>Connect the AlphaSmart Neo by USB to the buddy.</li>
           <li>Turn on <strong>Auto on connect</strong> on the Documents or Backups panel (or in Settings) to save changed files automatically when you plug in.</li>
-          <li>Use <strong>Backup now</strong> (changed files) or <strong>Backup all</strong> for a manual run.</li>
+          <li>Use <strong>Backup now</strong> for changed files only (same idea as Auto on connect), or <strong>Backup all</strong> to force-save every non-empty AlphaWord slot even if unchanged.</li>
           <li><strong>Keyboard mode note:</strong> scanning, reading, writing, or backing up files switches Neo to manager mode. Live typing / keyboard emulation pauses until backup finishes (or until you tap <strong>Keyboard mode</strong> after a single file read).</li>
           <li>Empty or whitespace-only documents are skipped.</li>
-          <li>Identical text already on the buddy is not saved again (byte-for-byte compare, not filename).</li>
+          <li><strong>Backup now</strong> / Auto on connect skip today’s file when the bytes match; <strong>Backup all</strong> rewrites today’s file anyway.</li>
           <li>On internal flash, oldest backups are removed automatically when space runs low.</li>
           <li>SD card files are never deleted by factory reset or flash pruning.</li>
         </ul>
@@ -58,7 +58,7 @@
         <h2>3. Home Wi‑Fi &amp; finding the portal</h2>
         <ul>
           <li>In Home network mode the buddy joins your router.</li>
-          <li>Browse to the IP shown on the OLED, or try <code>http://&lt;device-name&gt;.local</code> (mDNS), e.g. <code>http://neo2-buddy.local</code>.</li>
+          <li>Browse to the IP shown on the OLED / serial log (e.g. <code>http://192.168.x.x/</code>). SoftAP setup uses <code>http://192.168.4.1/</code>.</li>
           <li>If home Wi‑Fi fails, a recovery hotspot appears so you can fix settings.</li>
         </ul>
       </section>
@@ -66,9 +66,9 @@
       <section>
         <h2>4. Bluetooth &amp; live typing</h2>
         <ul>
-          <li>Open <strong>Typing &amp; Bluetooth</strong> in the portal nav (or <code>/typing.html</code>). That page monitors keyboard mode only — it does not scan files or list SmartApplets, so your Neo stays in typing emulation.</li>
-          <li>Use <strong>Pair keyboard</strong> once so a phone/PC/tablet bonds the buddy as a Bluetooth keyboard (2-minute window for a <em>new</em> host).</li>
-          <li>Bonds are saved on the buddy. After reboot, the buddy re-advertises so the same host can reconnect without pairing again.</li>
+          <li>Open <strong>Typing &amp; Bluetooth</strong> in the portal nav (or <code>/typing.html</code>). That page monitors keyboard mode only — it does not scan files or list SmartApplets, so your Neo stays in typing emulation. If Neo is stuck in ASM (manager) mode after a Documents action, tap <strong>Keyboard mode</strong> on that page.</li>
+          <li>Use <strong>Pair keyboard</strong> once so a phone/PC/tablet bonds the buddy as a Bluetooth keyboard (3-minute window for a <em>new</em> host). No PIN — tap <strong>Pair</strong>/<strong>Connect</strong> on the host. If a 6-digit code appears, confirm it (do not type a PIN). After flashing new firmware, remove Neo2 Buddy from the host Bluetooth list and use <strong>Forget bonded hosts</strong> on the buddy first — Windows especially caches the old HID profile.</li>
+          <li>Bonds are saved on the buddy. Use <strong>Forget bonded hosts</strong> in that dialog (or UART <code>device ble clear</code>) to erase them. Bluetooth stays off at boot until a host is already bonded (then it re-advertises for reconnect) or you start pairing from the portal.</li>
           <li>While connected, <strong>keys you press on the Neo are typed on the phone/PC</strong> (live passthrough). The live viewer on the Typing page shows the same text.</li>
           <li><strong>ASM (manager) mode:</strong> Scan, backup, and file actions on the <strong>Documents</strong> page switch the Neo out of keyboard mode. While Bluetooth is connected, those actions may <strong>stop keystrokes</strong> reaching your paired device until keyboard mode returns (automatic after Backup now / Backup all).</li>
           <li><strong>Send text</strong> (from the Typing page or a backup on Documents) is optional for pasting longer portal text to the same host.</li>
@@ -78,14 +78,24 @@
       <section>
         <h2>5. Cloud sync (optional)</h2>
         <ul>
-          <li>Open <strong>Cloud sync</strong>, choose WebDAV or S3-compatible storage, save, then <strong>Test connection</strong>.</li>
+          <li>Open <strong>Cloud sync</strong>, choose WebDAV, S3-compatible storage, or Hammer Ink, save, then <strong>Test connection</strong>.</li>
           <li>Enable <strong>Auto cloud upload after backup</strong> in Settings if you want uploads after each successful backup.</li>
           <li>Local copies stay on the buddy; cloud upload never deletes them.</li>
         </ul>
       </section>
 
       <section>
-        <h2>6. Password &amp; factory reset</h2>
+        <h2>6. SmartApplets &amp; Applet Store</h2>
+        <ul>
+          <li>On the Documents page, use <strong>Applet Store</strong> to install optional stock apps (games, drills, organizers, Flash Cards, and more) onto the Neo.</li>
+          <li>You can also install a validated <code>.os3kapp</code> file, download a copy of an installed applet, or remove one. <strong>Refresh</strong> loads the list (briefly switches Neo to manager mode).</li>
+          <li>Flash Cards decks are edited in the portal deck library, then pushed to the Neo one set at a time.</li>
+          <li>Lean firmware profiles without Wi‑Fi/web have no portal Applet Store — use Full (or another Wi‑Fi build).</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>7. Password &amp; factory reset</h2>
         <ul>
           <li>Change the portal password under Settings → Portal password.</li>
           <li>Factory reset (Settings) requires re-entering the password. It clears settings and internal backups; <strong>SD card is kept</strong>.</li>
@@ -94,8 +104,8 @@
       </section>
 
       <section>
-        <h2>7. Serial CLI (advanced)</h2>
-        <p>With UART enabled: <code>login PASSWORD</code>, then <code>device factory-reset PASSWORD</code>, <code>help</code>, or Neo/backup commands. See the firmware UART help.</p>
+        <h2>8. Serial CLI (advanced)</h2>
+        <p>With UART enabled: <code>login PASSWORD</code>, then <code>device factory-reset PASSWORD</code>, <code>help</code>, or Neo/backup commands. See the firmware UART help. UART-slim firmware uses this console instead of the Wi‑Fi portal.</p>
       </section>
     </article>
   </main>

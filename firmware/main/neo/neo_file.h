@@ -9,15 +9,22 @@
  *
  *   offset 0x00  name[15] + nul padding
  *   offset 0x10  password[7]
- *   offset 0x18  min_size (BE u32) — logical text length
- *   offset 0x1c  alloc_size (BE u32) — allocated buffer on device
+ *   offset 0x18  min_size (BE u32) — minimum allocation (AlphaWord reserve; often 512)
+ *   offset 0x1c  alloc_size (BE u32) — actual allocation; NeoTools reads this many bytes
  *   offset 0x20  flags (BE u32)
  *   offset 0x25  file_space code (maps to Neo "File 1".."File 8" keys)
+ *
+ * Text length is NOT in the attribute record. AlphaWord pads unused space with
+ * 0xa7; export skips those (NeoTools text_file.py). Empty cleared slots have
+ * alloc_size == 0. A slot can still have alloc_size == 512 of pure padding /
+ * NULs / control bytes with no exportable text — list used_size reports 0 for
+ * those so the portal can hide them (same rule as backup skip).
  *
  * READ PATH (backup export)
  * -------------------------
  *   One ASM dialogue: GET_FILE_ATTRIBUTES → READ_RAW_FILE → neo_device_read_extended(alloc_size)
  *   Prefer neo_file_read_alloc() so callers avoid a second dialogue just to learn size.
+ *   Always request alloc_size — never truncate to min_size.
  *
  * WRITE PATH (import)
  * -------------------
@@ -71,6 +78,11 @@ esp_err_t neo_file_read_alloc(uint16_t applet_id, uint8_t file_index, neo_file_a
                               uint8_t **out_data, size_t *out_length, size_t max_bytes);
 
 esp_err_t neo_file_write_raw(uint16_t applet_id, uint8_t file_index, const uint8_t *data, size_t length);
+/**
+ * Write raw bytes; if current alloc_size is smaller, SET_ATTR + COMMIT then WRITE_RAW
+ * (NeoTools grow path — avoids create() duplicating slots).
+ */
+esp_err_t neo_file_write_raw_resize(uint16_t applet_id, uint8_t file_index, const uint8_t *data, size_t length);
 esp_err_t neo_file_clear(uint16_t applet_id, uint8_t file_index);
 esp_err_t neo_file_create(uint16_t applet_id, const char *name, const char *password, const uint8_t *data,
                           size_t length);

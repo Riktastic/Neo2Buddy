@@ -16,18 +16,25 @@
  */
 
 #include "web_api_http.h"
+#include "board_config.h"
 #include "device_status.h"
+#if HAVE_SDCARD
 #include "sd_format.h"
+#endif
 #include "usb_host_neo.h"
 #include "neo_import.h"
 #include "neo_live.h"
 #include "settings.h"
 #include "cloud_sync.h"
 #include "factory_reset.h"
-#include "board_config.h"
+#if HAVE_STOCK_APPLETS
+#include "stock_applets.h"
+#include "flash_decks.h"
+#endif
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_netif.h"
 #include "lwip/inet.h"
@@ -141,13 +148,64 @@ static void apply_network_json_fields(cJSON *root, device_settings_t *s)
     if (cJSON_IsString(item) && item->valuestring && item->valuestring[0] != '\0') {
         strncpy(s->hotspot_password, item->valuestring, sizeof(s->hotspot_password) - 1);
     }
+
+    /* Full saved-network list from the portal (SSID + optional password). */
+    item = cJSON_GetObjectItemCaseSensitive(root, "wifi_networks");
+    if (cJSON_IsArray(item)) {
+        device_settings_t keep = *s;
+        s->wifi_network_count = 0;
+        memset(s->wifi_networks, 0, sizeof(s->wifi_networks));
+        s->wifi_ssid[0] = '\0';
+        s->wifi_password[0] = '\0';
+        const cJSON *net = NULL;
+        cJSON_ArrayForEach(net, item) {
+            if (!cJSON_IsObject(net)) {
+                continue;
+            }
+            const cJSON *ssid_item = cJSON_GetObjectItemCaseSensitive(net, "ssid");
+            if (!cJSON_IsString(ssid_item) || !ssid_item->valuestring ||
+                ssid_item->valuestring[0] == '\0') {
+                continue;
+            }
+            const cJSON *pwd_item = cJSON_GetObjectItemCaseSensitive(net, "password");
+            const char *pwd = "";
+            if (cJSON_IsString(pwd_item) && pwd_item->valuestring && pwd_item->valuestring[0] != '\0') {
+                pwd = pwd_item->valuestring;
+            } else {
+                const char *prev = settings_wifi_password_for(&keep, ssid_item->valuestring);
+                if (prev) {
+                    pwd = prev;
+                }
+            }
+            (void)settings_wifi_upsert(s, ssid_item->valuestring, pwd);
+        }
+        const cJSON *pref = cJSON_GetObjectItemCaseSensitive(root, "wifi_ssid");
+        if (cJSON_IsString(pref) && pref->valuestring && pref->valuestring[0] != '\0') {
+            settings_wifi_set_preferred(s, pref->valuestring);
+        } else if (s->wifi_network_count > 0) {
+            settings_wifi_set_preferred(s, s->wifi_networks[0].ssid);
+        }
+    }
+
     item = cJSON_GetObjectItemCaseSensitive(root, "wifi_ssid");
     if (cJSON_IsString(item) && item->valuestring && item->valuestring[0] != '\0') {
-        strncpy(s->wifi_ssid, item->valuestring, sizeof(s->wifi_ssid) - 1);
-    }
-    item = cJSON_GetObjectItemCaseSensitive(root, "wifi_password");
-    if (cJSON_IsString(item) && item->valuestring && item->valuestring[0] != '\0') {
-        strncpy(s->wifi_password, item->valuestring, sizeof(s->wifi_password) - 1);
+        const char *pwd = "";
+        cJSON *pwd_item = cJSON_GetObjectItemCaseSensitive(root, "wifi_password");
+        if (cJSON_IsString(pwd_item) && pwd_item->valuestring && pwd_item->valuestring[0] != '\0') {
+            pwd = pwd_item->valuestring;
+        }
+        if (!settings_wifi_upsert(s, item->valuestring, pwd)) {
+            settings_wifi_set_preferred(s, item->valuestring);
+            if (pwd[0] != '\0') {
+                strlcpy(s->wifi_password, pwd, sizeof(s->wifi_password));
+            }
+        }
+    } else {
+        item = cJSON_GetObjectItemCaseSensitive(root, "wifi_password");
+        if (cJSON_IsString(item) && item->valuestring && item->valuestring[0] != '\0' &&
+            s->wifi_ssid[0] != '\0') {
+            (void)settings_wifi_upsert(s, s->wifi_ssid, item->valuestring);
+        }
     }
     settings_apply_hotspot_defaults(s);
 }
@@ -161,7 +219,8 @@ static bool settings_network_config_valid(const device_settings_t *s, char *err,
     device_settings_t tmp = *s;
     settings_apply_hotspot_defaults(&tmp);
     if (tmp.network_mode == SETTINGS_NETWORK_HOME) {
-        if (tmp.wifi_ssid[0] == '\0') {
+        settings_wifi_sync_primary(&tmp);
+        if (tmp.wifi_ssid[0] == '\0' && tmp.wifi_network_count == 0) {
             if (err && err_len > 0) {
                 strlcpy(err, "home network mode requires a Wi-Fi network", err_len);
             }
@@ -243,6 +302,7 @@ static esp_err_t files_download_handler(httpd_req_t *req);
 static esp_err_t files_view_handler(httpd_req_t *req);
 static esp_err_t ble_get_handler(httpd_req_t *req);
 static esp_err_t ble_pairing_post_handler(httpd_req_t *req);
+static esp_err_t ble_bonds_clear_post_handler(httpd_req_t *req);
 static esp_err_t ble_preview_post_handler(httpd_req_t *req);
 static esp_err_t ble_send_post_handler(httpd_req_t *req);
 static esp_err_t ble_cancel_post_handler(httpd_req_t *req);
@@ -255,7 +315,9 @@ static esp_err_t sync_run_post_handler(httpd_req_t *req);
 static esp_err_t factory_reset_post_handler(httpd_req_t *req);
 static esp_err_t settings_post_handler(httpd_req_t *req);
 static esp_err_t sd_status_get_handler(httpd_req_t *req);
+#if HAVE_SDCARD
 static esp_err_t sd_format_post_handler(httpd_req_t *req);
+#endif
 static esp_err_t wifi_get_handler(httpd_req_t *req);
 static esp_err_t wifi_post_handler(httpd_req_t *req);
 static esp_err_t wifi_confirm_post_handler(httpd_req_t *req);
@@ -401,7 +463,8 @@ static esp_err_t onboarding_post_handler(httpd_req_t *req)
     }
 
     if (s.network_mode == SETTINGS_NETWORK_HOME) {
-        if (s.wifi_ssid[0] == '\0') {
+        settings_wifi_sync_primary(&s);
+        if (s.wifi_ssid[0] == '\0' && s.wifi_network_count == 0) {
             cJSON_Delete(root);
             httpd_resp_set_status(req, "400 Bad Request");
             httpd_resp_send(req, "home network mode requires wifi_ssid", HTTPD_RESP_USE_STRLEN);
@@ -770,6 +833,24 @@ static esp_err_t neo_require_alphaword_applet(httpd_req_t *req, unsigned int app
     return ESP_ERR_INVALID_ARG;
 }
 
+/** Path only (no ?query / #fragment) for sscanf-based route parsing. */
+static void http_req_path(const httpd_req_t *req, char *out, size_t out_size)
+{
+    if (!out || out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (!req) {
+        return;
+    }
+    size_t i = 0;
+    while (req->uri[i] && req->uri[i] != '?' && req->uri[i] != '#' && (i + 1) < out_size) {
+        out[i] = req->uri[i];
+        i++;
+    }
+    out[i] = '\0';
+}
+
 static esp_err_t neo_read_request_body(httpd_req_t *req, uint8_t **out_buf, size_t *out_len)
 {
     int total_len = req->content_len;
@@ -947,7 +1028,10 @@ static esp_err_t neo_file_transfer_handler(httpd_req_t *req, bool is_download)
     unsigned int applet_id = 0;
     unsigned int file_index = 0;
     char action[16];
-    if (sscanf(req->uri, "/api/v1/neo/applets/%u/files/%u/%15s", &applet_id, &file_index, action) != 3 ||
+    char path[192];
+    http_req_path(req, path, sizeof(path));
+    /* Stop action at /?# so "?map=…" is not glued onto "read"/"download". */
+    if (sscanf(path, "/api/v1/neo/applets/%u/files/%u/%15[^/?#]", &applet_id, &file_index, action) != 3 ||
         applet_id > 0xffff || file_index == 0 || file_index > 255) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_send(req, "bad path", HTTPD_RESP_USE_STRLEN);
@@ -1164,6 +1248,35 @@ static esp_err_t neo_restart_post_handler(httpd_req_t *req)
     }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"ok\":true,\"mode\":\"keyboard\"}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+/* POST /api/v1/neo/manager — enter ASM/comms (manager mode) for file/applet ops */
+static esp_err_t neo_manager_post_handler(httpd_req_t *req)
+{
+    if (!request_is_authenticated(req)) {
+        return send_unauthorized(req);
+    }
+    if (neo_autobackup_is_busy()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, "{\"error\":\"auto_backup_busy\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+    esp_err_t err = usb_host_neo_ensure_comms();
+    if (err != ESP_OK) {
+        err = usb_host_neo_ensure_comms();
+    }
+    if (err != ESP_OK) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "{\"error\":\"%s\"}", esp_err_to_name(err));
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, buf, HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"ok\":true,\"mode\":\"manager\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -1839,6 +1952,41 @@ static esp_err_t status_get_handler(httpd_req_t *req) {
  * @param server HTTP server handle returned by `httpd_start`.
  * @return ESP_OK on success, or the first error from `httpd_register_uri_handler`.
  */
+bool web_api_uri_match(const char *template, const char *uri, size_t uri_len)
+{
+    if (!template || !uri) {
+        return false;
+    }
+
+    const char *t = template;
+    const char *u = uri;
+    const char *u_end = uri + uri_len;
+
+    while (*t) {
+        if (*t == '*') {
+            t++;
+            if (*t == '\0') {
+                /* Trailing '*': match any remainder (including empty). */
+                return true;
+            }
+            /* Mid-path '*': consume exactly one URI path segment (until '/' or end). */
+            if (u >= u_end) {
+                return false;
+            }
+            while (u < u_end && *u != '/') {
+                u++;
+            }
+            continue;
+        }
+        if (u >= u_end || *u != *t) {
+            return false;
+        }
+        t++;
+        u++;
+    }
+    return u == u_end;
+}
+
 esp_err_t web_api_register(httpd_handle_t server) {
     esp_err_t r;
 
@@ -1915,6 +2063,8 @@ esp_err_t web_api_register(httpd_handle_t server) {
     r = httpd_register_uri_handler(server, &ble_get_uri); if (r != ESP_OK) return r;
     httpd_uri_t ble_pair_uri = { .uri = "/api/v1/ble/pairing", .method = HTTP_POST, .handler = ble_pairing_post_handler, .user_ctx = NULL };
     r = httpd_register_uri_handler(server, &ble_pair_uri); if (r != ESP_OK) return r;
+    httpd_uri_t ble_bonds_clear_uri = { .uri = "/api/v1/ble/bonds/clear", .method = HTTP_POST, .handler = ble_bonds_clear_post_handler, .user_ctx = NULL };
+    r = httpd_register_uri_handler(server, &ble_bonds_clear_uri); if (r != ESP_OK) return r;
     httpd_uri_t ble_preview_uri = { .uri = "/api/v1/ble/preview", .method = HTTP_POST, .handler = ble_preview_post_handler, .user_ctx = NULL };
     r = httpd_register_uri_handler(server, &ble_preview_uri); if (r != ESP_OK) return r;
     httpd_uri_t ble_send_uri = { .uri = "/api/v1/ble/send", .method = HTTP_POST, .handler = ble_send_post_handler, .user_ctx = NULL };
@@ -1945,6 +2095,8 @@ esp_err_t web_api_register(httpd_handle_t server) {
     r = httpd_register_uri_handler(server, &neo_applet_inspect_uri); if (r != ESP_OK) return r;
     httpd_uri_t neo_restart_uri = { .uri = "/api/v1/neo/restart", .method = HTTP_POST, .handler = neo_restart_post_handler, .user_ctx = NULL };
     r = httpd_register_uri_handler(server, &neo_restart_uri); if (r != ESP_OK) return r;
+    httpd_uri_t neo_manager_uri = { .uri = "/api/v1/neo/manager", .method = HTTP_POST, .handler = neo_manager_post_handler, .user_ctx = NULL };
+    r = httpd_register_uri_handler(server, &neo_manager_uri); if (r != ESP_OK) return r;
     httpd_uri_t neo_autobackup_get_uri = { .uri = "/api/v1/neo/autobackup", .method = HTTP_GET, .handler = neo_autobackup_get_handler, .user_ctx = NULL };
     r = httpd_register_uri_handler(server, &neo_autobackup_get_uri); if (r != ESP_OK) return r;
     httpd_uri_t neo_autobackup_post_uri = { .uri = "/api/v1/neo/autobackup", .method = HTTP_POST, .handler = neo_autobackup_post_handler, .user_ctx = NULL };
@@ -1996,8 +2148,10 @@ esp_err_t web_api_register(httpd_handle_t server) {
     /* SD status for UI polling */
     httpd_uri_t sd_status_uri = { .uri = "/api/v1/sd/status", .method = HTTP_GET, .handler = sd_status_get_handler, .user_ctx = NULL };
     r = httpd_register_uri_handler(server, &sd_status_uri); if (r != ESP_OK) return r;
+#if HAVE_SDCARD
     httpd_uri_t sd_format_uri = { .uri = "/api/v1/sd/format", .method = HTTP_POST, .handler = sd_format_post_handler, .user_ctx = NULL };
     r = httpd_register_uri_handler(server, &sd_format_uri); if (r != ESP_OK) return r;
+#endif
     // Wi-Fi endpoints
     httpd_uri_t wifi_get_uri = { .uri = "/api/v1/wifi", .method = HTTP_GET, .handler = wifi_get_handler, .user_ctx = NULL };
     r = httpd_register_uri_handler(server, &wifi_get_uri); if (r != ESP_OK) return r;
@@ -2029,6 +2183,13 @@ esp_err_t web_api_register(httpd_handle_t server) {
     httpd_uri_t onboarding_post_uri = { .uri = "/api/v1/onboarding", .method = HTTP_POST, .handler = onboarding_post_handler, .user_ctx = NULL };
     r = httpd_register_uri_handler(server, &onboarding_post_uri);
     if (r != ESP_OK) return r;
+
+#if HAVE_STOCK_APPLETS
+    r = stock_applets_web_register(server);
+    if (r != ESP_OK) return r;
+    r = flash_decks_web_register(server);
+    if (r != ESP_OK) return r;
+#endif
 
     /* Captive + static routes must register after API routes when wildcard matching
      * is enabled; otherwise the catch-all static pattern blocks API registration. */
@@ -2164,6 +2325,7 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
         return ESP_OK;
     }
     settings_apply_hotspot_defaults(&s);
+    settings_wifi_sync_primary(&s);
     cJSON *root = cJSON_CreateObject();
     if (!root) {
         httpd_resp_set_status(req, "500 Internal Server Error");
@@ -2183,6 +2345,24 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
                             s.network_mode == SETTINGS_NETWORK_HOME ? "home" : "direct");
     cJSON_AddStringToObject(root, "hotspot_ssid", s.hotspot_ssid);
     cJSON_AddStringToObject(root, "wifi_ssid", s.wifi_ssid);
+    cJSON *nets = cJSON_AddArrayToObject(root, "wifi_networks");
+    if (nets) {
+        for (uint8_t i = 0; i < s.wifi_network_count && i < SETTINGS_WIFI_NETWORK_MAX; i++) {
+            if (s.wifi_networks[i].ssid[0] == '\0') {
+                continue;
+            }
+            cJSON *n = cJSON_CreateObject();
+            if (!n) {
+                break;
+            }
+            cJSON_AddStringToObject(n, "ssid", s.wifi_networks[i].ssid);
+            cJSON_AddBoolToObject(n, "password_set", s.wifi_networks[i].password[0] != '\0');
+            cJSON_AddBoolToObject(n, "preferred",
+                                  strncmp(s.wifi_networks[i].ssid, s.wifi_ssid,
+                                          SETTINGS_WIFI_SSID_MAX_LENGTH) == 0);
+            cJSON_AddItemToArray(nets, n);
+        }
+    }
     cJSON_AddBoolToObject(root, "wifi_dhcp", s.wifi_dhcp);
     cJSON_AddStringToObject(root, "wifi_ip", s.wifi_ip);
     cJSON_AddStringToObject(root, "wifi_netmask", s.wifi_netmask);
@@ -2211,7 +2391,7 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
 {
     if (!request_is_authenticated(req)) return send_unauthorized(req);
     int total_len = req->content_len;
-    if (total_len <= 0 || total_len > 1024) {
+    if (total_len <= 0 || total_len > 3072) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_send(req, "bad body", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
@@ -2299,11 +2479,21 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
         || strcmp(prev_norm.hotspot_password, s.hotspot_password) != 0
         || strcmp(prev_norm.wifi_ssid, s.wifi_ssid) != 0
         || strcmp(prev_norm.wifi_password, s.wifi_password) != 0
+        || prev_norm.wifi_network_count != s.wifi_network_count
         || prev_norm.wifi_dhcp != s.wifi_dhcp
         || strcmp(prev_norm.wifi_ip, s.wifi_ip) != 0
         || strcmp(prev_norm.wifi_netmask, s.wifi_netmask) != 0
         || strcmp(prev_norm.wifi_gateway, s.wifi_gateway) != 0
         || strcmp(prev_norm.wifi_dns, s.wifi_dns) != 0;
+    if (!network_changed) {
+        for (uint8_t i = 0; i < s.wifi_network_count && i < SETTINGS_WIFI_NETWORK_MAX; i++) {
+            if (strcmp(prev_norm.wifi_networks[i].ssid, s.wifi_networks[i].ssid) != 0 ||
+                strcmp(prev_norm.wifi_networks[i].password, s.wifi_networks[i].password) != 0) {
+                network_changed = true;
+                break;
+            }
+        }
+    }
 
     char err_msg[96] = {0};
     if (!settings_network_config_valid(&s, err_msg, sizeof(err_msg))) {
@@ -2327,7 +2517,7 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     } else if (network_changed) {
         ESP_LOGW("web_api", "Network changed; applying live (reboot suppressed — recent boot)");
         if (s.network_mode == SETTINGS_NETWORK_HOME) {
-            wifi_manager_connect(s.wifi_ssid, s.wifi_password);
+            wifi_manager_connect_best();
         } else {
             wifi_manager_start_ap();
         }
@@ -2371,6 +2561,7 @@ static esp_err_t sd_status_get_handler(httpd_req_t *req)
 }
 
 /* POST /api/v1/sd/format - start formatting the SD card (async) */
+#if HAVE_SDCARD
 static esp_err_t sd_format_post_handler(httpd_req_t *req)
 {
     if (!request_is_authenticated(req)) return send_unauthorized(req);
@@ -2386,6 +2577,7 @@ static esp_err_t sd_format_post_handler(httpd_req_t *req)
     httpd_resp_send(req, "format_in_progress", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
+#endif
 
 // Command endpoints
 /**
@@ -2445,6 +2637,19 @@ static esp_err_t wifi_get_handler(httpd_req_t *req)
 
 static esp_err_t wifi_scan_json_response(httpd_req_t *req)
 {
+#if HAVE_BLE
+    /* Active Wi‑Fi scans interrupt the shared radio — defer while pairing or
+     * while a host is connected so HID keystrokes stay uninterrupted. */
+    if (ble_hid_radio_critical()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req,
+                        "{\"error\":\"ble_busy\",\"detail\":\"Wi-Fi scan paused while "
+                        "Bluetooth pairing or a keyboard connection is active.\"}",
+                        HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+#endif
     esp_err_t err = esp_wifi_scan_start(NULL, true);
     if (err != ESP_OK) {
         httpd_resp_set_status(req, "500 Internal Server Error");
@@ -2566,6 +2771,7 @@ static esp_err_t wifi_post_handler(httpd_req_t *req)
     device_settings_t s = prev;
     strlcpy(s.wifi_ssid, ssid, sizeof(s.wifi_ssid));
     strlcpy(s.wifi_password, password, sizeof(s.wifi_password));
+    (void)settings_wifi_upsert(&s, ssid, password);
     s.network_mode = SETTINGS_NETWORK_HOME;
     s.wifi_dhcp = dhcp;
     strlcpy(s.wifi_ip, ip, sizeof(s.wifi_ip));
@@ -2965,16 +3171,44 @@ static esp_err_t ble_get_handler(httpd_req_t *req)
     if (st.ble_state == DEVICE_BLE_PAIRING) state = "pairing";
     else if (st.ble_state == DEVICE_BLE_CONNECTED) state = "connected";
 
-    char out[320];
+    ble_hid_bond_peer_t peers[BLE_HID_MAX_BONDS];
+    int n = ble_hid_list_bonds(peers, BLE_HID_MAX_BONDS);
+
+    char bonds_json[BLE_HID_MAX_BONDS * 64 + 8];
+    size_t o = 0;
+    bonds_json[o++] = '[';
+    for (int i = 0; i < n && o + 48 < sizeof(bonds_json); ++i) {
+        const uint8_t *a = peers[i].addr;
+        int w = snprintf(bonds_json + o, sizeof(bonds_json) - o,
+                         "%s{\"addr\":\"%02x:%02x:%02x:%02x:%02x:%02x\",\"type\":%u}",
+                         i ? "," : "", a[0], a[1], a[2], a[3], a[4], a[5],
+                         (unsigned)peers[i].type);
+        if (w < 0) {
+            break;
+        }
+        o += (size_t)w;
+    }
+    if (o < sizeof(bonds_json)) {
+        bonds_json[o++] = ']';
+        bonds_json[o] = '\0';
+    } else {
+        strlcpy(bonds_json, "[]", sizeof(bonds_json));
+    }
+
+    char out[560];
     snprintf(out, sizeof(out),
              "{\"state\":\"%s\",\"advertising\":%s,\"connected\":%s,\"can_send\":%s,"
-             "\"send_in_progress\":%s,\"bonded\":%d,\"passthrough\":true}",
+             "\"send_in_progress\":%s,\"bonded\":%d,\"bonds\":%s,\"passthrough\":true,"
+             "\"ready\":%s,\"pairing_enabled\":%s,\"passkey\":null,\"pairing_mode\":\"just_works\"}",
              state,
              ble_hid_is_advertising() ? "true" : "false",
              ble_hid_is_connected() ? "true" : "false",
              ble_hid_can_send() ? "true" : "false",
              ble_hid_send_in_progress() ? "true" : "false",
-             ble_hid_bonded_count());
+             n,
+             bonds_json,
+             ble_hid_is_ready() ? "true" : "false",
+             ble_hid_pairing_enabled() ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -2999,9 +3233,54 @@ static esp_err_t ble_pairing_post_handler(httpd_req_t *req)
             }
         }
     }
-    ble_hid_set_pairing_enabled(enabled);
+    esp_err_t err = ble_hid_set_pairing_enabled(enabled);
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, enabled ? "{\"pairing\":true}" : "{\"pairing\":false}", HTTPD_RESP_USE_STRLEN);
+    if (err != ESP_OK) {
+        char out[320];
+        size_t largest =
+            heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+        snprintf(out, sizeof(out),
+                 "{\"pairing\":false,\"advertising\":false,\"ready\":false,"
+                 "\"error\":\"Bluetooth could not start (need contiguous internal RAM). "
+                 "Reboot the buddy, close extra portal tabs, then try Pair keyboard again.\","
+                 "\"largest_internal\":%u}",
+                 (unsigned)largest);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+    char out[200];
+    snprintf(out, sizeof(out),
+             "{\"pairing\":%s,\"advertising\":%s,\"ready\":%s,\"state\":\"%s\","
+             "\"pairing_mode\":\"just_works\"}",
+             enabled ? "true" : "false",
+             ble_hid_is_advertising() ? "true" : "false",
+             ble_hid_is_ready() ? "true" : "false",
+             enabled ? "pairing" : "idle");
+    httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static esp_err_t ble_bonds_clear_post_handler(httpd_req_t *req)
+{
+    if (!request_is_authenticated(req)) return send_unauthorized(req);
+    /* Drain any body so keep-alive clients stay happy. */
+    if (req->content_len > 0) {
+        char sink[64];
+        int left = req->content_len;
+        while (left > 0) {
+            int n = httpd_req_recv(req, sink, left > (int)sizeof(sink) ? (int)sizeof(sink) : left);
+            if (n <= 0) {
+                break;
+            }
+            left -= n;
+        }
+    }
+    ble_hid_clear_bonds();
+    char out[96];
+    snprintf(out, sizeof(out), "{\"cleared\":true,\"bonded\":%d}", ble_hid_bonded_count());
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -3635,9 +3914,17 @@ static void register_command_endpoints(httpd_handle_t server) {
 }
 
 /* Serve static files from the SPIFFS mount at /spiflash. Files are streamed in
-   small chunks so large assets (e.g. app.js) do not require a full-file heap copy. */
+   small chunks so large assets do not require a full-file heap copy.
+
+   Large portal assets are packed as .gz only (see tools/pack_firmware_web.py).
+   Prefer the .gz sibling when present; if the plain file is missing, serve .gz
+   even when Accept-Encoding omitted so SoftAP/home browsers still get the UI. */
 static const char *spiffs_base = "/spiflash";
-#define STATIC_FILE_CHUNK_SIZE 2048
+#define STATIC_FILE_CHUNK_SIZE 1024
+#define STATIC_FILE_PATH_MAX 192
+
+static char s_static_gz_path[STATIC_FILE_PATH_MAX + 4];
+static char s_static_chunk[STATIC_FILE_CHUNK_SIZE];
 
 static const char *guess_content_type(const char *path)
 {
@@ -3655,28 +3942,71 @@ static const char *guess_content_type(const char *path)
     return "application/octet-stream";
 }
 
+static bool client_accepts_gzip(httpd_req_t *req)
+{
+    char accept[96];
+    if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", accept, sizeof(accept)) != ESP_OK) {
+        return false;
+    }
+    return strstr(accept, "gzip") != NULL;
+}
+
 static esp_err_t serve_static_file(httpd_req_t *req, const char *fs_path)
 {
+    const char *open_path = fs_path;
+    bool gzip = false;
+
+    if (strlen(fs_path) + 4 < sizeof(s_static_gz_path)) {
+        snprintf(s_static_gz_path, sizeof(s_static_gz_path), "%s.gz", fs_path);
+        struct stat gz_st;
+        if (stat(s_static_gz_path, &gz_st) == 0 && S_ISREG(gz_st.st_mode) && gz_st.st_size > 0) {
+            struct stat plain_st;
+            const bool plain_ok =
+                (stat(fs_path, &plain_st) == 0 && S_ISREG(plain_st.st_mode) && plain_st.st_size > 0);
+            /* Gzip-only packed assets have no plain twin — serve them anyway. */
+            if (client_accepts_gzip(req) || !plain_ok) {
+                open_path = s_static_gz_path;
+                gzip = true;
+            }
+        }
+    }
+
     struct stat st;
-    if (stat(fs_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+    if (stat(open_path, &st) != 0 || !S_ISREG(st.st_mode)) {
         httpd_resp_set_status(req, "404 Not Found");
         httpd_resp_send(req, "Not found", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
-    FILE *f = fopen(fs_path, "rb");
+    FILE *f = fopen(open_path, "rb");
     if (!f) {
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_send(req, "read error", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
+    /* Content-Type from the logical path (index.html), not index.html.gz. */
     httpd_resp_set_type(req, guess_content_type(fs_path));
+    /* Portal HTML/JS/CSS change every flash — never let browsers keep a stale app.js
+       that leaves new buttons (e.g. Install from store) with no click handler. */
+    {
+        const char *ctype = guess_content_type(fs_path);
+        if (ctype && (strcmp(ctype, "text/html") == 0 || strcmp(ctype, "text/css") == 0 ||
+                      strcmp(ctype, "application/javascript") == 0 || strcmp(ctype, "text/javascript") == 0)) {
+            httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+            httpd_resp_set_hdr(req, "Pragma", "no-cache");
+        } else {
+            httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=300");
+        }
+    }
+    if (gzip) {
+        httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+        httpd_resp_set_hdr(req, "Vary", "Accept-Encoding");
+    }
 
-    char chunk[STATIC_FILE_CHUNK_SIZE];
     size_t read_bytes = 0;
     esp_err_t err = ESP_OK;
-    while ((read_bytes = fread(chunk, 1, sizeof(chunk), f)) > 0) {
-        if (httpd_resp_send_chunk(req, chunk, read_bytes) != ESP_OK) {
+    while ((read_bytes = fread(s_static_chunk, 1, sizeof(s_static_chunk), f)) > 0) {
+        if (httpd_resp_send_chunk(req, s_static_chunk, read_bytes) != ESP_OK) {
             err = ESP_FAIL;
             break;
         }
@@ -3694,14 +4024,21 @@ static esp_err_t serve_static_file(httpd_req_t *req, const char *fs_path)
 
 static esp_err_t static_get_handler(httpd_req_t *req)
 {
-    const char *uri = req->uri;
+    /* Strip ?query / #fragment — cache-bust URLs like /js/app.js?v=1.0.0 must map to app.js. */
+    char uri_buf[768];
+    http_req_path(req, uri_buf, sizeof(uri_buf));
+    const char *uri = uri_buf[0] ? uri_buf : "/";
+
     /* Optionally require portal auth before serving SPA assets */
     device_settings_t ds;
     if (settings_load(&ds) == ESP_OK && ds.require_portal_auth) {
         /* If client is not authenticated, only allow login endpoints and static assets needed for login. */
         if (!request_is_authenticated(req)) {
             /* Allow login POST and token refresh but block everything else under / */
-            if (strcmp(uri, "/api/v1/login") == 0 || strcmp(uri, "/api/v1/token/refresh") == 0 || strstr(uri, ".css") || strstr(uri, ".js")) {
+            if (strcmp(uri, "/api/v1/login") == 0 || strcmp(uri, "/api/v1/token/refresh") == 0 ||
+                strstr(uri, ".css") || strstr(uri, ".js") || strstr(uri, ".svg") ||
+                strcmp(uri, "/") == 0 || strcmp(uri, "/index.html") == 0 ||
+                strcmp(uri, "/setup.html") == 0 || strcmp(uri, "/favicon.svg") == 0) {
                 // allow
             } else {
                 httpd_resp_set_status(req, "401 Unauthorized");
@@ -3759,7 +4096,7 @@ static esp_err_t static_get_handler(httpd_req_t *req)
     }
     snprintf(path, sizeof(path), "%s%s", spiffs_base, uri);
     /* If uri ends with '/', serve index.html under that path */
-    if (uri[strlen(uri)-1] == '/') {
+    if (uri[uri_len - 1] == '/') {
         strncat(path, "index.html", sizeof(path) - strlen(path) - 1);
     }
     return serve_static_file(req, path);

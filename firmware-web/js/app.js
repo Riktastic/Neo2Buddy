@@ -1,6 +1,13 @@
 const PORTAL_PAGE = document.body?.dataset?.page || 'dashboard';
 const IS_TYPING_PAGE = PORTAL_PAGE === 'typing';
 const IS_DASHBOARD = PORTAL_PAGE === 'dashboard';
+const IS_NEO_LINK_PAGE = PORTAL_PAGE === 'neo-link';
+
+const STATUS_ACTIVE_MS = 12000;
+const STATUS_IDLE_MS = 30000;
+let statusPollTimer = null;
+let statusUnchangedStreak = 0;
+let statusFingerprint = '';
 
 const dialog = document.querySelector('#action-dialog');
 const filesEmpty = document.querySelector('#files-empty');
@@ -24,7 +31,7 @@ const syncDialog = document.querySelector('#sync-dialog');
 const settingsDialog = document.querySelector('#settings-dialog');
 
 const actions = {
-  'open-pairing': ['BLUETOOTH', 'Pair keyboard', 'Make the buddy discoverable so a phone or computer can bond as a Bluetooth keyboard. Pairing for a new host stops after two minutes. Bonds are saved and reconnect after reboot. While connected, Neo keys are forwarded live over Bluetooth.'],
+  'open-pairing': ['BLUETOOTH', 'Pair keyboard', 'Make the buddy discoverable so a phone or computer can bond as a Bluetooth keyboard. No PIN — tap Pair/Connect on the host. After a firmware update, remove Neo2 Buddy from the host Bluetooth list and Forget bonded hosts here first. Pairing for a new host stops after three minutes. While connected, Neo keys are forwarded live over Bluetooth.'],
   'open-ble-send': ['BLUETOOTH', 'Send text', 'Optionally preview portal text and type it to the paired host. Neo keys already pass through live when Bluetooth is connected — this is for pasting backups or longer text.'],
   wifi: ['NETWORK', 'Wi-Fi setup', 'Switch between Direct access and Home network, or update saved Wi‑Fi details.'],
   settings: ['SETTINGS', 'Device settings', 'Control brightness, sleep, device name and recovery options.']
@@ -48,14 +55,108 @@ function neoCharmapQuery(prefix = '?') {
 }
 
 function getAuthToken() { return localStorage.getItem('neo2_token'); }
-function setAuthToken(t) { if (t) localStorage.setItem('neo2_token', t); else localStorage.removeItem('neo2_token'); }
 
-function authFetch(path, opts={}){
+/** True only after the device accepts the stored bearer token (or a fresh login). */
+let sessionVerified = false;
+
+function isSessionAuthed() {
+  return sessionVerified && !!getAuthToken();
+}
+
+function setAuthToken(t) {
+  if (t) localStorage.setItem('neo2_token', t);
+  else {
+    localStorage.removeItem('neo2_token');
+    localStorage.removeItem('neo2_token_exp_at');
+    sessionVerified = false;
+  }
+}
+
+/** Drop a dead/expired portal session and return the UI to guest mode. */
+function invalidateSession(notice) {
+  const had = !!getAuthToken() || sessionVerified;
+  sessionVerified = false;
+  setAuthToken(null);
+  if (had) {
+    updateSignInState();
+    if (notice) showNotice(notice, 'error');
+  }
+}
+
+function rememberTokenExpiry(expiresInSec) {
+  const sec = Number(expiresInSec);
+  if (!Number.isFinite(sec) || sec <= 0) {
+    localStorage.removeItem('neo2_token_exp_at');
+    return;
+  }
+  localStorage.setItem('neo2_token_exp_at', String(Date.now() + sec * 1000));
+}
+
+async function authFetch(path, opts = {}) {
   opts.headers = opts.headers || {};
   const t = getAuthToken();
   if (!t) return Promise.reject(new Error('Authentication required'));
-  opts.headers['Authorization'] = 'Bearer ' + t;
-  return fetch(API_BASE + path, opts);
+  opts.headers.Authorization = 'Bearer ' + t;
+  const res = await fetch(API_BASE + path, opts);
+  if (res.status === 401) {
+    invalidateSession('Session expired — sign in again');
+  }
+  return res;
+}
+
+/**
+ * Confirm the stored token is still accepted (and rotate it).
+ * Returns false when the session is gone; network errors return null (keep token, stay guest UI).
+ */
+async function validateSession() {
+  const t = getAuthToken();
+  if (!t) {
+    sessionVerified = false;
+    return false;
+  }
+  try {
+    const res = await fetch(API_BASE + '/token/refresh', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + t },
+    });
+    if (res.status === 401) {
+      invalidateSession('Session expired — sign in again');
+      return false;
+    }
+    if (!res.ok) {
+      sessionVerified = false;
+      return null;
+    }
+    const j = await res.json();
+    if (j && j.token) {
+      setAuthToken(j.token);
+      rememberTokenExpiry(j.expires_in);
+    }
+    sessionVerified = true;
+    return true;
+  } catch (_) {
+    sessionVerified = false;
+    return null;
+  }
+}
+
+/** Drop a browser token if the buddy is back on first-run setup (NVS wiped). */
+async function clearSessionIfOnboarding() {
+  try {
+    const res = await fetch(`${API_BASE}/onboarding?_=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const j = await res.json().catch(() => null);
+    if (j && j.onboarding_complete === false && getAuthToken()) {
+      invalidateSession();
+    }
+  } catch (_) { /* ignore */ }
+}
+
+function purgeExpiredLocalToken() {
+  const expAt = Number(localStorage.getItem('neo2_token_exp_at') || 0);
+  if (getAuthToken() && expAt > 0 && Date.now() > expAt) {
+    setAuthToken(null);
+  }
 }
 
 /** Read-only local endpoints that do not require sign-in on the device AP. */
@@ -178,21 +279,80 @@ async function apiRequest(path, options = {}) {
   const response = await authFetch(path, options);
   if (response.ok) return response;
   const message = (await response.text()).trim();
-  throw new Error(message || `Request failed (${response.status})`);
+  throw new Error(formatApiErrorMessage(message, response.status));
+}
+
+function formatApiErrorMessage(raw, status) {
+  if (!raw) return `Request failed (${status})`;
+  const text = String(raw).trim();
+  try {
+    const j = JSON.parse(text);
+    if (j && typeof j.error === 'string') {
+      const map = {
+        invalid_package: 'The file is not a valid SmartApplet package (.os3kapp).',
+        already_installed:
+          'That applet is already installed on the Neo. Check “Replace an installed applet with the same ID”, then install again.',
+        insufficient_space: 'Not enough free ROM or RAM on the Neo for this applet.',
+        applet_too_large: 'The package is too large to upload (maximum 1 MB).',
+        auto_backup_busy: 'Auto-backup is running. Try again when it finishes.',
+        missing_body: 'No package data was received. Choose a file and try again.',
+        upload_failed: 'The package upload failed. Check Wi‑Fi and try again.',
+        out_of_memory: 'The buddy ran out of memory while receiving the package.',
+        install_failed: j.detail ? `Install failed (${j.detail}).` : 'Install failed on the Neo.',
+        fetch_failed: j.detail ? `Download failed (${j.detail}).` : 'Download failed.',
+        applet_not_found: 'That applet was not found on the Neo.',
+      };
+      if (map[j.error]) return map[j.error];
+      if (j.detail) return String(j.detail);
+      return String(j.error).replace(/_/g, ' ');
+    }
+  } catch (_) { /* plain text */ }
+  /* Never show raw JSON blobs in the UI. */
+  if (text.startsWith('{') && text.includes('"error"')) {
+    try {
+      const j = JSON.parse(text);
+      if (j?.error === 'already_installed') {
+        return 'That applet is already installed on the Neo. Check “Replace an installed applet with the same ID”, then install again.';
+      }
+      if (typeof j?.error === 'string') return String(j.error).replace(/_/g, ' ');
+    } catch (_) { /* ignore */ }
+  }
+  return text.length > 180 ? text.slice(0, 180) + '…' : text;
+}
+
+function setDialogStatus(el, message, type = '') {
+  if (!el) return;
+  el.textContent = message || '';
+  if (type) el.dataset.type = type;
+  else delete el.dataset.type;
 }
 
 function setButtonBusy(button, busy, busyLabel) {
   if (!button) return;
+  const labelEl = button.querySelector('.btn-label');
   if (busy) {
-    button.dataset.label = button.textContent;
-    button.textContent = busyLabel;
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
+    if (labelEl) {
+      if (button.dataset.label == null) button.dataset.label = labelEl.textContent;
+      /* Icon-only buttons keep their glyph; spinner comes from CSS ::before. */
+      if (busyLabel && !button.classList.contains('icon-action-only')) {
+        labelEl.textContent = busyLabel;
+      }
+    } else {
+      if (button.dataset.label == null) button.dataset.label = button.textContent;
+      button.textContent = busyLabel || button.dataset.label || 'Working…';
+    }
     return;
   }
-  button.textContent = button.dataset.label || button.textContent;
   button.disabled = false;
   button.removeAttribute('aria-busy');
+  if (labelEl) {
+    if (button.dataset.label != null) labelEl.textContent = button.dataset.label;
+  } else if (button.dataset.label != null) {
+    button.textContent = button.dataset.label;
+  }
+  delete button.dataset.label;
 }
 
 function showNotice(message, type = 'info') {
@@ -495,29 +655,75 @@ document.querySelectorAll('[data-action]').forEach((button) => button.addEventLi
   dialog.showModal();
 }));
 
-document.querySelector('#action-dialog-close')?.addEventListener('click', () => dialog.close());
+document.querySelector('#action-dialog-close')?.addEventListener('click', () => {
+  stopBlePairingPoll();
+  dialog.close();
+});
 document.querySelector('#action-dialog-form')?.addEventListener('submit', (event) => {
   if (event.submitter?.id !== 'action-dialog-close') return;
   event.preventDefault();
+  stopBlePairingPoll();
   dialog.close();
 });
 
+let blePairingPoll = null;
+
+function stopBlePairingPoll() {
+  if (blePairingPoll) {
+    clearInterval(blePairingPoll);
+    blePairingPoll = null;
+  }
+}
+
+function bleStatusLabel(j) {
+  if (j.state === 'connected') {
+    return 'Connected — Neo keys pass through live';
+  }
+  if (j.state === 'pairing' || j.pairing_enabled) {
+    if (j.advertising) {
+      return 'Advertising now — choose Neo2 Buddy and tap Pair (no PIN, 3 min)';
+    }
+    if (j.ready) {
+      return 'Bluetooth starting — advertising should begin in a moment…';
+    }
+    return 'Pairing requested, but Bluetooth is not advertising yet';
+  }
+  if (j.bonded > 0) {
+    return `Idle — ${j.bonded} bonded host${j.bonded === 1 ? '' : 's'}, waiting to reconnect`;
+  }
+  return 'Bluetooth off — start pairing to add a host';
+}
+
 async function refreshBleStatus() {
   const line = document.querySelector('#ble-status-line');
+  const bondsList = document.querySelector('#ble-bonds-list');
   if (!line) return;
   try {
     const res = await authFetch('/ble');
     if (!res.ok) throw new Error('unavailable');
     const j = await res.json();
     const sendLine = document.querySelector('#ble-send-status');
-    const stateLabel = j.state === 'connected'
-      ? 'Connected — Neo keys pass through live'
-      : j.state === 'pairing'
-        ? 'Discoverable for pairing (2 min)'
-        : (j.bonded > 0
-          ? `Idle — ${j.bonded} bonded host${j.bonded === 1 ? '' : 's'}, waiting to reconnect`
-          : 'Not paired');
-    line.textContent = `${stateLabel}. ${j.can_send ? 'Host ready for Neo typing and portal Send text.' : 'Connect or pair a Bluetooth host to type.'}`;
+    line.textContent = `${bleStatusLabel(j)}. ${j.can_send ? 'Host ready for Neo typing and portal Send text.' : 'Connect or pair a Bluetooth host to type.'}`;
+    if (bondsList) {
+      const bonds = Array.isArray(j.bonds) ? j.bonds : [];
+      if (bonds.length === 0) {
+        bondsList.hidden = true;
+        bondsList.innerHTML = '';
+      } else {
+        bondsList.hidden = false;
+        bondsList.innerHTML = bonds.map((b, i) => {
+          const addr = (b && b.addr) ? String(b.addr) : 'unknown';
+          return `<li>Host ${i + 1}: <code>${addr}</code></li>`;
+        }).join('');
+      }
+    }
+    if (j.state === 'pairing' || j.pairing_enabled) {
+      if (!blePairingPoll) {
+        blePairingPoll = setInterval(() => { refreshBleStatus(); }, 1500);
+      }
+    } else {
+      stopBlePairingPoll();
+    }
     if (sBleConnected && sendLine) {
       sendLine.textContent = 'While Bluetooth is connected, ASM (manager) mode on the Documents page may stop keystrokes until keyboard mode returns.';
     } else if (sendLine) {
@@ -527,16 +733,31 @@ async function refreshBleStatus() {
     }
   } catch (error) {
     line.textContent = 'Bluetooth status unavailable.';
+    if (bondsList) {
+      bondsList.hidden = true;
+      bondsList.innerHTML = '';
+    }
   }
 }
 
 document.querySelector('#ble-start-pairing')?.addEventListener('click', async () => {
+  const line = document.querySelector('#ble-status-line');
+  if (line) line.textContent = 'Starting Bluetooth…';
   try {
     const res = await authFetch('/ble/pairing', { method: 'POST', body: JSON.stringify({ enabled: true }), headers: { 'Content-Type': 'application/json' } });
-    if (!res.ok) throw new Error('Pairing could not be started.');
-    showNotice('Device is discoverable for 2 minutes.', 'success');
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(j.error || 'Pairing could not be started.');
+    }
+    if (j.advertising) {
+      showNotice('Device is advertising — choose Neo2 Buddy and tap Pair (no PIN).', 'success');
+    } else {
+      showNotice('Bluetooth started — waiting for advertising…', 'success');
+    }
     refreshBleStatus();
   } catch (error) {
+    stopBlePairingPoll();
+    if (line) line.textContent = error.message || 'Pairing could not be started.';
     showNotice(error.message, 'error');
   }
 });
@@ -544,9 +765,35 @@ document.querySelector('#ble-start-pairing')?.addEventListener('click', async ()
 document.querySelector('#ble-stop-pairing')?.addEventListener('click', async () => {
   try {
     await authFetch('/ble/pairing', { method: 'POST', body: JSON.stringify({ enabled: false }), headers: { 'Content-Type': 'application/json' } });
+    stopBlePairingPoll();
     showNotice('Pairing stopped.', 'success');
     refreshBleStatus();
   } catch (error) {
+    showNotice(error.message, 'error');
+  }
+});
+
+document.querySelector('#ble-clear-bonds')?.addEventListener('click', async () => {
+  const line = document.querySelector('#ble-status-line');
+  if (!window.confirm('Forget all bonded Bluetooth hosts on this buddy? You will need to pair again.')) {
+    return;
+  }
+  if (line) line.textContent = 'Forgetting bonded hosts…';
+  try {
+    const res = await authFetch('/ble/bonds/clear', {
+      method: 'POST',
+      body: '{}',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(j.error || 'Could not clear bonded hosts.');
+    }
+    stopBlePairingPoll();
+    showNotice('Bonded hosts forgotten. Start pairing to add a new one.', 'success');
+    refreshBleStatus();
+  } catch (error) {
+    if (line) line.textContent = error.message || 'Could not clear bonded hosts.';
     showNotice(error.message, 'error');
   }
 });
@@ -605,8 +852,39 @@ function syncProviderFieldsUi() {
   const provider = document.querySelector('input[name="provider"]:checked')?.value || 'webdav';
   const bucketField = document.querySelector('#bucket-field');
   const regionField = document.querySelector('#region-field');
+  const pathHint = document.querySelector('#sync-path-hint');
+  const endpoint = document.querySelector('#sync-endpoint');
+  const pathInput = document.querySelector('#sync-path');
+  const userLabel = document.querySelector('#user-field');
+  const secretLabel = document.querySelector('#secret-field');
   if (bucketField) bucketField.hidden = provider !== 's3';
   if (regionField) regionField.hidden = provider !== 's3';
+  if (pathHint) {
+    pathHint.textContent = provider === 'hammer'
+      ? 'Hammer project name (created on first sync if missing).'
+      : 'Optional subfolder for uploaded backups.';
+  }
+  if (pathInput) {
+    pathInput.placeholder = provider === 'hammer' ? 'Neo2 Buddy' : 'alpha-smart/neo2';
+  }
+  if (endpoint) {
+    endpoint.placeholder = provider === 'hammer'
+      ? 'https://hammer.ink'
+      : provider === 's3'
+        ? 'https://ACCOUNT_ID.r2.cloudflarestorage.com'
+        : 'https://cloud.example.com/remote.php/dav/files/you/backups';
+    if (provider === 'hammer' && (!endpoint.value || /example\.com|r2\.cloudflare/i.test(endpoint.value))) {
+      endpoint.value = 'https://hammer.ink';
+    }
+  }
+  if (userLabel) {
+    const input = userLabel.querySelector('input');
+    userLabel.childNodes[0].textContent = provider === 'hammer' ? 'Email' : 'Username or access key';
+    if (input) input.placeholder = provider === 'hammer' ? 'you@example.com' : '';
+  }
+  if (secretLabel) {
+    secretLabel.childNodes[0].textContent = provider === 'hammer' ? 'Password' : 'App password or secret key';
+  }
   updateSyncProviderHelp(provider);
 }
 
@@ -617,6 +895,10 @@ function updateSyncProviderHelp(provider) {
     el.innerHTML = '<strong>S3-compatible setup</strong><br>Use the bucket endpoint (for example Cloudflare R2 or AWS S3). Set <strong>Bucket</strong>, <strong>Region</strong> (<code>auto</code> for R2), access key ID as username, and secret access key. The buddy must be on home Wi‑Fi so the clock can sync before uploads.';
     return;
   }
+  if (provider === 'hammer') {
+    el.innerHTML = '<strong>Hammer Ink setup</strong><br>Use your <a href="https://hammer.ink/" target="_blank" rel="noopener">hammer.ink</a> account email and password. Backups are uploaded as <strong>Notes</strong> into a Hammer project (default name <code>Neo2 Buddy</code>). Official server access may require a Patreon subscription. Local files stay on the buddy.';
+    return;
+  }
   el.innerHTML = '<strong>WebDAV setup</strong><br>For Nextcloud, paste the full WebDAV folder URL (often ending in <code>/remote.php/dav/files/you/backups</code>). Use your account username and an app password — not your login password. The buddy creates the optional subfolder automatically before the first upload.';
 }
 
@@ -625,13 +907,15 @@ function validateCloudSyncPayload(payload, credentialsConfigured) {
     throw new Error('Server URL must start with https://');
   }
   if (!payload.username) {
-    throw new Error('Username or access key is required.');
+    throw new Error(payload.provider === 'hammer' ? 'Email is required.' : 'Username or access key is required.');
   }
   if (payload.provider === 's3' && !payload.bucket) {
     throw new Error('Bucket name is required for S3-compatible storage.');
   }
   if (!credentialsConfigured && !payload.secret) {
-    throw new Error('Enter an app password or secret key the first time you save.');
+    throw new Error(payload.provider === 'hammer'
+      ? 'Enter your hammer.ink password the first time you save.'
+      : 'Enter an app password or secret key the first time you save.');
   }
 }
 
@@ -663,7 +947,7 @@ function updateCloudSyncHealth(cfg) {
     else if (state === 'ok') subtitle.textContent = 'Ready for cloud upload';
     else if (state === 'error') subtitle.textContent = 'Cloud upload needs attention';
     else if (health.configured) subtitle.textContent = 'Saved — test connection recommended';
-    else subtitle.textContent = 'WebDAV or S3 backup destination';
+    else subtitle.textContent = 'WebDAV, S3, or Hammer Ink';
   }
 
   if (checklist) {
@@ -677,6 +961,8 @@ function updateCloudSyncHealth(cfg) {
     if (clockItem) {
       if (provider === 's3') clockItem.dataset.ok = health.clock_ok ? 'true' : 'false';
       else clockItem.dataset.ok = 'true';
+      if (provider === 'hammer') clockItem.textContent = 'Hammer account can sign in';
+      else clockItem.textContent = 'Device clock synced (required for S3)';
     }
     setOk('saved', !!health.configured);
     const st = cfg?.status || {};
@@ -694,7 +980,8 @@ async function loadCloudSyncConfig() {
     if (!res.ok) return null;
     const cfg = await res.json();
     const provider = cfg.provider || 'none';
-    const radio = document.querySelector(`input[name="provider"][value="${provider === 's3' ? 's3' : 'webdav'}"]`);
+    const providerValue = (provider === 's3' || provider === 'hammer') ? provider : 'webdav';
+    const radio = document.querySelector(`input[name="provider"][value="${providerValue}"]`);
     if (radio) radio.checked = true;
     form.elements.endpoint.value = cfg.endpoint || '';
     form.elements.path.value = cfg.folder || cfg.path || '';
@@ -825,6 +1112,84 @@ function portalSettings() {
   return JSON.parse(localStorage.getItem('neo2_portal_settings') || '{}');
 }
 
+/** @type {{ssid: string, password_set?: boolean, preferred?: boolean, password?: string}[]} */
+let savedWifiNetworks = [];
+
+function renderSavedWifiList() {
+  const list = document.getElementById('wifi-saved-list');
+  if (!list) return;
+  if (!savedWifiNetworks.length) {
+    list.innerHTML = '<li class="wifi-saved-empty">No saved home networks yet. Scan, enter the password, then Add / update.</li>';
+    return;
+  }
+  list.innerHTML = savedWifiNetworks
+    .map((n) => {
+      const pref = !!n.preferred;
+      const meta = pref ? 'preferred' : n.password_set || n.password ? 'saved' : 'needs password';
+      return `<li class="wifi-saved-item${pref ? ' is-preferred' : ''}" data-ssid="${escapeHtml(n.ssid)}">
+        <button type="button" class="button small wifi-saved-prefer" data-ssid="${escapeHtml(n.ssid)}">${escapeHtml(n.ssid)}</button>
+        <span class="wifi-saved-meta">${meta}</span>
+        <button type="button" class="button small danger-action wifi-saved-remove" data-ssid="${escapeHtml(n.ssid)}" aria-label="Remove ${escapeHtml(n.ssid)}">Remove</button>
+      </li>`;
+    })
+    .join('');
+}
+
+function setPreferredWifi(ssid) {
+  if (!ssid) return;
+  savedWifiNetworks.forEach((n) => {
+    n.preferred = n.ssid === ssid;
+  });
+  const sel = document.querySelector('#wifi-ssid');
+  if (sel) {
+    sel.dataset.savedSsid = ssid;
+    if (![...sel.options].some((o) => o.value === ssid)) {
+      sel.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(ssid)}">${escapeHtml(ssid)} (saved)</option>`);
+    }
+    sel.value = ssid;
+  }
+  renderSavedWifiList();
+}
+
+function upsertSavedWifi(ssid, password) {
+  if (!ssid) return false;
+  let entry = savedWifiNetworks.find((n) => n.ssid === ssid);
+  if (!entry) {
+    if (savedWifiNetworks.length >= 4) {
+      showNotice('You can save up to 4 Wi‑Fi networks.', 'error');
+      return false;
+    }
+    entry = { ssid, password_set: false };
+    savedWifiNetworks.push(entry);
+  }
+  if (password) {
+    entry.password = password;
+    entry.password_set = true;
+  }
+  savedWifiNetworks.forEach((n) => {
+    n.preferred = n.ssid === ssid;
+  });
+  setPreferredWifi(ssid);
+  return true;
+}
+
+function removeSavedWifi(ssid) {
+  savedWifiNetworks = savedWifiNetworks.filter((n) => n.ssid !== ssid);
+  if (savedWifiNetworks.length && !savedWifiNetworks.some((n) => n.preferred)) {
+    savedWifiNetworks[0].preferred = true;
+    setPreferredWifi(savedWifiNetworks[0].ssid);
+  } else if (!savedWifiNetworks.length) {
+    const sel = document.querySelector('#wifi-ssid');
+    if (sel) {
+      sel.dataset.savedSsid = '';
+      sel.value = '';
+    }
+    renderSavedWifiList();
+  } else {
+    renderSavedWifiList();
+  }
+}
+
 function settingsNetworkMode() {
   const checked = document.querySelector('input[name="settings-network-mode"]:checked');
   return checked ? checked.value : 'direct';
@@ -881,10 +1246,24 @@ async function openSettings(options = {}) {
       document.querySelector('#hotspot-ssid').value = sj.hotspot_ssid || '';
       document.querySelector('#hotspot-password').value = '';
       const ssidSelect = document.querySelector('#wifi-ssid');
-      if (ssidSelect) {
-        ssidSelect.dataset.savedSsid = sj.wifi_ssid || '';
-        ssidSelect.value = sj.wifi_ssid || '';
+      if (Array.isArray(sj.wifi_networks) && sj.wifi_networks.length) {
+        savedWifiNetworks = sj.wifi_networks
+          .filter((n) => n && n.ssid)
+          .map((n) => ({
+            ssid: n.ssid,
+            password_set: !!n.password_set,
+            preferred: !!n.preferred || n.ssid === sj.wifi_ssid,
+          }));
+      } else if (sj.wifi_ssid) {
+        savedWifiNetworks = [{ ssid: sj.wifi_ssid, password_set: true, preferred: true }];
+      } else {
+        savedWifiNetworks = [];
       }
+      if (ssidSelect) {
+        ssidSelect.dataset.savedSsid = sj.wifi_ssid || (savedWifiNetworks[0] && savedWifiNetworks[0].ssid) || '';
+        ssidSelect.value = ssidSelect.dataset.savedSsid || '';
+      }
+      renderSavedWifiList();
       document.querySelector('#wifi-password').value = '';
       const dhcpEl = document.querySelector('#wifi-dhcp');
       if (dhcpEl) dhcpEl.checked = sj.wifi_dhcp !== false;
@@ -956,45 +1335,217 @@ function initHeaderFooter() {
 }
 
 function updateSignInState() {
-  loginBtn.textContent = getAuthToken() ? 'Signed in' : 'Sign In';
+  const btn = document.getElementById('login-btn');
+  if (btn) {
+    const authed = isSessionAuthed();
+    btn.textContent = authed ? 'Sign out' : 'Sign In';
+    btn.title = authed ? 'Sign out of the portal' : 'Sign in to manage this device';
+    btn.setAttribute('aria-pressed', authed ? 'true' : 'false');
+  }
   updateAuthVisibility();
 }
 
+/** IDs that must stay hidden until a portal session exists. */
+const AUTH_REQUIRED_IDS = [
+  'logs-button',
+  'settings-button',
+  'refresh-files',
+  'upload-file',
+  'open-sync',
+  'sync-run-backups',
+  'refresh-neo-files',
+  'neo-charmap',
+  'neo-read-all',
+  'neo-backup-now',
+  'neo-manager',
+  'neo-rescan',
+  'install-applet',
+  'install-from-store',
+  'refresh-applets',
+  'remove-all-applets',
+  'dashboard-auto-backup-wrap',
+  'backups-auto-backup-wrap',
+  'open-wifi',
+  'pause-live',
+  'toggle-raw',
+  'clear-live',
+  'follow-indicator',
+];
+
+function clearAuthenticatedUi() {
+  const conn = document.getElementById('connection');
+  if (conn) conn.textContent = 'Not signed in';
+
+  sNeoKeyboardActive = false;
+  sNeoCommsReady = false;
+  sBleConnected = false;
+  sBleState = 'idle';
+  sBackupBusy = false;
+
+  const neoConn = document.getElementById('neo-connection');
+  if (neoConn) neoConn.textContent = 'Sign in';
+  const neoDetail = document.getElementById('neo-connection-detail');
+  if (neoDetail) neoDetail.textContent = 'Sign in to see Neo USB status and run Scan / Backup.';
+
+  const model = document.getElementById('neo-model');
+  if (model) model.textContent = '—';
+  const modelDetail = document.getElementById('neo-model-detail');
+  if (modelDetail) modelDetail.textContent = 'Available after sign-in';
+
+  const appletCount = document.getElementById('applet-count');
+  if (appletCount) appletCount.textContent = '—';
+  const appletDetail = document.getElementById('applet-count-detail');
+  if (appletDetail) appletDetail.textContent = 'Sign in, then Refresh SmartApplets';
+
+  const backupCount = document.getElementById('backup-count');
+  if (backupCount) backupCount.textContent = '—';
+  const backupDetail = document.getElementById('backup-count-detail');
+  if (backupDetail) backupDetail.textContent = 'Sign in to list local backups';
+
+  if (fileList) {
+    fileList.innerHTML = '';
+    fileList.hidden = true;
+  }
+  if (filesEmpty) {
+    filesEmpty.hidden = false;
+    const h = filesEmpty.querySelector('h3');
+    const p = filesEmpty.querySelector('p');
+    if (h) h.textContent = 'Sign in to view backups';
+    if (p) p.textContent = 'Local backup files appear here after you sign in.';
+  }
+
+  if (appletList) {
+    appletList.innerHTML = '';
+    appletList.hidden = true;
+  }
+  if (appletsEmpty) {
+    appletsEmpty.hidden = false;
+    const h = appletsEmpty.querySelector('h3');
+    const p = appletsEmpty.querySelector('p');
+    if (h) h.textContent = 'Sign in to manage applets';
+    if (p) p.textContent = 'Installed SmartApplets appear here after you sign in and tap Refresh.';
+  }
+
+  if (neoFileList) neoFileList.innerHTML = '';
+  if (neoFileTableWrap) neoFileTableWrap.hidden = true;
+  if (neoFilesEmpty) {
+    neoFilesEmpty.hidden = false;
+    const h = neoFilesEmpty.querySelector('h3');
+    const p = neoFilesEmpty.querySelector('p');
+    if (h) h.textContent = 'Sign in to scan Neo documents';
+    if (p) p.textContent = 'Connect the Neo and sign in, then use Scan NEO.';
+  }
+
+  const guidance = document.querySelector('#neo-documents-guidance');
+  if (guidance) {
+    guidance.textContent = 'Sign in to scan, backup, and manage AlphaWord documents on the connected Neo.';
+  }
+
+  const liveText = document.getElementById('live-text');
+  if (liveText) {
+    liveText.textContent = 'Sign in to monitor live Neo keyboard input.';
+  }
+
+  flashDeckList = [];
+  flashDeckActiveId = null;
+  flashDeckDraft = null;
+  const flashEmpty = document.querySelector('#flashdeck-empty');
+  const flashLayout = document.querySelector('#flashdeck-layout');
+  if (flashLayout) flashLayout.hidden = true;
+  if (flashEmpty) {
+    flashEmpty.hidden = false;
+    const h = flashEmpty.querySelector('h3');
+    const p = flashEmpty.querySelector('p');
+    if (h) h.textContent = 'No decks yet';
+    if (p) p.textContent = 'Create a set or import a text file.';
+  }
+  const flashList = document.querySelector('#flashdeck-set-list');
+  if (flashList) flashList.innerHTML = '';
+  const flashCards = document.querySelector('#flashdeck-cards');
+  if (flashCards) flashCards.innerHTML = '';
+  document.getElementById('stock-store-dialog')?.close();
+  document.getElementById('flashdeck-dialog')?.close();
+
+  const notices = document.getElementById('portal-notices');
+  if (notices) {
+    notices.hidden = true;
+    notices.innerHTML = '';
+  }
+
+  try {
+    sessionStorage.removeItem('neo_applet_count');
+  } catch (_) { /* ignore */ }
+}
+
 function updateAuthVisibility() {
-  const authed = !!getAuthToken();
-  const logsBtn = document.getElementById('logs-button');
-  const settingsBtn = document.getElementById('settings-button');
-  if (logsBtn) logsBtn.hidden = !authed;
-  if (settingsBtn) settingsBtn.hidden = !authed;
-  // Admin-only controls
-  const refreshFilesBtn = document.getElementById('refresh-files');
-  const openSyncBtn = document.getElementById('open-sync');
-  const syncRunBackupsBtn = document.getElementById('sync-run-backups');
-  const refreshNeoBtn = document.getElementById('refresh-neo-files');
-  const installAppletBtn = document.getElementById('install-applet');
-  const refreshAppletsBtn = document.getElementById('refresh-applets');
-  const neoCharmap = document.getElementById('neo-charmap');
-  const neoReadAllBtn = document.getElementById('neo-read-all');
-  const neoBackupNowBtn = document.getElementById('neo-backup-now');
-  const neoRestartBtn = document.getElementById('neo-restart');
-  const removeAllAppletsBtn = document.getElementById('remove-all-applets');
-  if (refreshFilesBtn) refreshFilesBtn.hidden = !authed;
-  const uploadFileBtn = document.getElementById('upload-file');
-  if (uploadFileBtn) uploadFileBtn.hidden = !authed;
-  if (openSyncBtn) openSyncBtn.hidden = !authed;
-  if (syncRunBackupsBtn) syncRunBackupsBtn.hidden = !authed;
-  if (refreshNeoBtn) refreshNeoBtn.hidden = !authed;
-  if (neoCharmap) neoCharmap.hidden = !authed;
-  if (neoReadAllBtn) neoReadAllBtn.hidden = !authed;
-  if (neoBackupNowBtn) neoBackupNowBtn.hidden = !authed;
-  if (neoRestartBtn) neoRestartBtn.hidden = !authed;
-  if (installAppletBtn) installAppletBtn.hidden = !authed;
-  if (refreshAppletsBtn) refreshAppletsBtn.hidden = !authed;
-  if (removeAllAppletsBtn) removeAllAppletsBtn.hidden = !authed;
-  const autoBackupWraps = ['dashboard-auto-backup-wrap', 'backups-auto-backup-wrap'];
-  for (const id of autoBackupWraps) {
+  const authed = isSessionAuthed();
+  document.body.classList.toggle('portal-authed', authed);
+  document.body.classList.toggle('portal-guest', !authed);
+
+  for (const id of AUTH_REQUIRED_IDS) {
     const el = document.getElementById(id);
     if (el) el.hidden = !authed;
+  }
+  document.querySelectorAll('[data-auth-required]').forEach((el) => {
+    el.hidden = !authed;
+  });
+
+  if (!authed) {
+    clearAuthenticatedUi();
+  } else {
+    const conn = document.getElementById('connection');
+    if (conn && (!conn.textContent || conn.textContent === 'Not signed in')) {
+      conn.textContent = 'Signed in…';
+    }
+    const guidance = document.querySelector('#neo-documents-guidance');
+    if (guidance && guidance.textContent.startsWith('Sign in')) {
+      guidance.innerHTML =
+        'Scan, read, write, and backup switch Neo to ASM (manager) mode only when you click them — not in the background. Only <strong>AlphaWord</strong> documents (8 slots) are shown and backed up. <strong>Backup now</strong> saves changed files only (same as Auto on connect). <strong>Backup all</strong> rewrites every non-empty slot. If Bluetooth is connected, keystrokes to your paired device may stop until keyboard mode returns.';
+    }
+    if (neoFilesEmpty) {
+      const h = neoFilesEmpty.querySelector('h3');
+      const p = neoFilesEmpty.querySelector('p');
+      if (h && h.textContent.startsWith('Sign in')) h.textContent = 'NEO files will appear here';
+      if (p && p.textContent.includes('sign in')) {
+        p.textContent = 'Connect the NEO by USB, then scan it to list AlphaWord documents on the device.';
+      }
+    }
+    if (appletsEmpty) {
+      const h = appletsEmpty.querySelector('h3');
+      const p = appletsEmpty.querySelector('p');
+      if (h && h.textContent.startsWith('Sign in')) h.textContent = 'Connect your NEO';
+      if (p && p.textContent.includes('sign in')) {
+        p.textContent = 'Installed applets will appear here after the NEO USB connection is active.';
+      }
+    }
+    if (filesEmpty) {
+      const h = filesEmpty.querySelector('h3');
+      const p = filesEmpty.querySelector('p');
+      if (h && h.textContent.startsWith('Sign in')) h.textContent = 'No saved documents';
+      if (p && p.textContent.includes('sign in')) {
+        p.textContent = 'Read a file from the NEO to create a local backup on SD or internal storage.';
+      }
+    }
+    const modelDetail = document.getElementById('neo-model-detail');
+    if (modelDetail && modelDetail.textContent === 'Available after sign-in') {
+      modelDetail.textContent = 'Reported by the NEO when connected';
+    }
+    const appletDetail = document.getElementById('applet-count-detail');
+    if (appletDetail && appletDetail.textContent.startsWith('Sign in')) {
+      appletDetail.textContent = 'Use Refresh in SmartApplets to update (manager mode)';
+    }
+    const backupDetail = document.getElementById('backup-count-detail');
+    if (backupDetail && backupDetail.textContent.startsWith('Sign in')) {
+      backupDetail.textContent = 'Saved on SD or internal storage';
+    }
+    const neoDetail = document.getElementById('neo-connection-detail');
+    if (neoDetail && neoDetail.textContent.startsWith('Sign in')) {
+      neoDetail.textContent = 'Connect the NEO with USB';
+    }
+    const neoConn = document.getElementById('neo-connection');
+    if (neoConn && neoConn.textContent === 'Sign in') {
+      neoConn.textContent = 'Waiting';
+    }
   }
 }
 
@@ -1005,10 +1556,8 @@ const loginForm = document.getElementById('login-form');
 const loginCancel = document.getElementById('login-cancel');
 
 loginBtn.addEventListener('click', () => {
-  if (getAuthToken()) {
-    setAuthToken(null);
-    updateSignInState();
-    document.querySelector('#connection').textContent = 'Not signed in';
+  if (isSessionAuthed()) {
+    invalidateSession();
     return;
   }
   document.querySelector('#login-error').hidden = true;
@@ -1025,11 +1574,17 @@ loginForm.addEventListener('submit', async (ev) => {
     if (!res.ok) throw new Error('The password was not accepted.');
     const j = await res.json();
     setAuthToken(j.token);
+    rememberTokenExpiry(j.expires_in);
+    sessionVerified = true;
     loginDialog.close();
     loginForm.reset();
     updateSignInState();
-    refreshStatus();
-    loadCloudSyncConfig();
+    await refreshStatus();
+    if (!IS_NEO_LINK_PAGE) loadCloudSyncConfig();
+    if (IS_DASHBOARD) {
+      await refreshFiles();
+    }
+    showNotice('Signed in.', 'success');
   } catch (error) {
     document.querySelector('#login-error').textContent = error.message === 'The password was not accepted.'
       ? error.message
@@ -1088,16 +1643,37 @@ document.querySelector('#settings-form')?.addEventListener('submit', (event) => 
           return;
         }
         if (hotspotPassword) body.hotspot_password = hotspotPassword;
+        /* Keep / update saved STA networks even while staying on Direct access. */
+        if (savedWifiNetworks.length) {
+          const preferred = savedWifiNetworks.find((n) => n.preferred) || savedWifiNetworks[0];
+          body.wifi_ssid = preferred.ssid;
+          body.wifi_networks = savedWifiNetworks.map((n) => {
+            const out = { ssid: n.ssid };
+            if (n.password) out.password = n.password;
+            return out;
+          });
+        }
       } else {
-        const ssidSelect = document.querySelector('#wifi-ssid');
-        const ssid = ssidSelect?.value.trim() || ssidSelect?.dataset.savedSsid || '';
-        if (!ssid) {
-          showNotice('Choose a home Wi‑Fi network (or scan and select one).', 'error');
+        let ssidSelect = document.querySelector('#wifi-ssid');
+        let ssid = ssidSelect?.value.trim() || ssidSelect?.dataset.savedSsid || '';
+        const preferred = savedWifiNetworks.find((n) => n.preferred);
+        if (preferred) ssid = preferred.ssid;
+        if (!ssid && savedWifiNetworks[0]) ssid = savedWifiNetworks[0].ssid;
+        if (!ssid && !savedWifiNetworks.length) {
+          showNotice('Add at least one home Wi‑Fi network (or scan and select one).', 'error');
           return;
         }
-        body.wifi_ssid = ssid;
-        const wifiPassword = document.querySelector('#wifi-password').value;
-        if (wifiPassword) body.wifi_password = wifiPassword;
+        if (ssid) {
+          const wifiPassword = document.querySelector('#wifi-password').value;
+          upsertSavedWifi(ssid, wifiPassword);
+          body.wifi_ssid = ssid;
+          if (wifiPassword) body.wifi_password = wifiPassword;
+        }
+        body.wifi_networks = savedWifiNetworks.map((n) => {
+          const out = { ssid: n.ssid };
+          if (n.password) out.password = n.password;
+          return out;
+        });
       }
       const res = await apiRequest('/settings', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
       const result = await res.json().catch(() => ({}));
@@ -1146,15 +1722,36 @@ function toggleStaticIpFields() {
 document.querySelector('#wifi-dhcp')?.addEventListener('change', () => toggleStaticIpFields());
 
 async function refreshStatus(){
+  if (!isSessionAuthed()) {
+    const conn = document.getElementById('connection');
+    if (conn) conn.textContent = 'Not signed in';
+    return;
+  }
   try{
     // Prefer the consolidated /status path; fall back to legacy /usb/status.
     let res = await authFetch('/status').catch(() => authFetch('/usb/status'));
     if (!res.ok) {
-      document.getElementById('connection').textContent = 'Not signed in';
+      if (res.status === 401) {
+        // authFetch already invalidated the session
+        return;
+      }
+      const conn = document.getElementById('connection');
+      if (conn) conn.textContent = 'Signed in · status unavailable';
       setNeoConnectionState({ usb_connected: false });
+      statusUnchangedStreak = 0;
       return;
     }
     const j = await res.json();
+    const fp = [
+      j.usb_connected, j.usb_keyboard_active, j.usb_neo_ready, j.usb_flipping,
+      j.ble_state, j.auto_backup_busy, j.auto_backup_on_connect,
+      j.ip, j.battery_percent, j.charging, j.product || ''
+    ].join('|');
+    if (fp === statusFingerprint) statusUnchangedStreak++;
+    else {
+      statusUnchangedStreak = 0;
+      statusFingerprint = fp;
+    }
     sBleState = j.ble_state || 'idle';
     sBleConnected = sBleState === 'connected';
     setNeoConnectionState(j);
@@ -1162,16 +1759,23 @@ async function refreshStatus(){
     const fmtBtn = document.getElementById('format-sd');
     if (fmtBtn) fmtBtn.hidden = !j.have_sdcard;
     const conn = document.getElementById('connection');
-    if (conn && j.ip) {
-      const ble = j.ble_state === 'connected' ? 'Bluetooth connected' : j.ble_state === 'pairing' ? 'Bluetooth pairing' : 'Bluetooth idle';
+    if (conn) {
+      const ble =
+        j.ble_state === 'connected'
+          ? 'Bluetooth connected'
+          : j.ble_state === 'pairing'
+            ? 'Bluetooth pairing'
+            : 'Bluetooth idle';
       conn.textContent = j.ip ? `${j.ip} · ${ble}` : ble;
     }
     if (IS_DASHBOARD && sNeoKeyboardActive) {
       updateAppletCountFromCache();
     }
   }catch(e){
-    document.getElementById('connection').textContent = 'Portal preview';
+    if (!isSessionAuthed()) return;
+    document.getElementById('connection').textContent = 'Signed in · reconnecting…';
     setNeoConnectionState({ usb_connected: false });
+    statusUnchangedStreak = 0;
   }
 }
 
@@ -1279,13 +1883,6 @@ for (const id of ['dashboard-auto-backup', 'backups-auto-backup']) {
   bindAutoBackupToggle(id);
 }
 
-document.addEventListener('click', (event) => {
-  if (event.target?.id === 'portal-enable-autobackup') {
-    event.preventDefault();
-    saveAutoBackupOnConnect(true);
-  }
-});
-
 function bleAsmWarningLine() {
   if (!sBleConnected) return '';
   return '\n\nBluetooth is connected: switching to ASM (manager) mode may stop Neo keystrokes reaching your phone or PC until keyboard mode returns.';
@@ -1302,9 +1899,42 @@ function confirmLeaveKeyboardMode(actionLabel) {
   );
 }
 
+/**
+ * Switch Neo to ASM/manager mode before Documents & Applets ops.
+ * Neo defaults to keyboard/emulation; firmware ops also call ensure_comms, but the
+ * portal must enter manager first so status/UI stay consistent.
+ * @returns {Promise<boolean>} true to proceed with the caller’s action
+ */
+async function ensureManagerMode(actionLabel, opts = {}) {
+  const needConfirm = opts.confirm !== false;
+  if (sBackupBusy) {
+    showNotice('Wait for the backup to finish first.', 'error');
+    return false;
+  }
+  if (needConfirm && !confirmLeaveKeyboardMode(actionLabel)) return false;
+  if (sNeoCommsReady) return true;
+  try {
+    await apiRequest('/neo/manager', { method: 'POST' });
+    await refreshStatus();
+    if (!sNeoCommsReady) {
+      showNotice('Neo did not enter manager mode. Check the USB connection and try again.', 'error');
+      return false;
+    }
+    return true;
+  } catch (error) {
+    showNotice(`Could not switch to manager mode: ${error.message || error}`, 'error');
+    return false;
+  }
+}
+
 function updatePortalNotices() {
   const el = document.getElementById('portal-notices');
   if (!el) return;
+  if (!getAuthToken()) {
+    el.innerHTML = '';
+    el.hidden = true;
+    return;
+  }
   let html = '';
   if (sBleConnected) {
     const docsHint = IS_DASHBOARD
@@ -1313,12 +1943,6 @@ function updatePortalNotices() {
     html =
       `<p class="portal-notice portal-notice-ble" role="status">` +
       `<strong>Bluetooth keyboard connected.</strong> ASM (manager) mode may <strong>stop Neo keystrokes</strong> on your paired device until keyboard mode returns.${docsHint}</p>`;
-  } else if (IS_DASHBOARD && getAuthToken() && !sAutoBackupOnConnect) {
-    html =
-      '<p class="portal-notice portal-notice-info" role="status">' +
-      '<strong>Tip:</strong> Enable <strong>Auto on connect</strong> on Documents or Backups to save changed files when you plug in the Neo ' +
-      '(brief keyboard pause; returns automatically).' +
-      ' <button type="button" class="portal-notice-action" id="portal-enable-autobackup">Enable now</button></p>';
   } else if (IS_DASHBOARD && sNeoKeyboardActive) {
     html =
       '<p class="portal-notice portal-notice-info" role="status">' +
@@ -1333,6 +1957,7 @@ function updatePortalNotices() {
 }
 
 function setNeoConnectionState(status) {
+  if (!getAuthToken()) return;
   const connected = !!status?.usb_connected;
   const keyboardActive = !!status?.usb_keyboard_active;
   const commsReady = !!status?.usb_neo_ready;
@@ -1410,7 +2035,7 @@ function setNeoConnectionState(status) {
 function setBackupBusyUi(busy, opts = {}) {
   const wasBusy = sBackupBusy;
   sBackupBusy = !!busy;
-  const ids = ['neo-backup-now', 'neo-read-all', 'refresh-neo-files', 'neo-restart', 'neo-rescan'];
+  const ids = ['neo-backup-now', 'neo-read-all', 'refresh-neo-files', 'neo-manager', 'neo-rescan'];
   for (const id of ids) {
     const el = document.getElementById(id);
     if (el) el.disabled = sBackupBusy;
@@ -1491,7 +2116,7 @@ async function refreshNeoSystemInfo() {
 async function rescanNeo() {
   const btn = document.getElementById('neo-rescan');
   const detail = document.querySelector('#neo-connection-detail');
-  if (btn) btn.disabled = true;
+  setButtonBusy(btn, true, 'Scanning…');
   if (detail) detail.textContent = 'Scanning OTG1 and triggering Neo handshake…';
   try {
     const res = await authFetch('/neo/rescan', { method: 'POST' });
@@ -1515,7 +2140,7 @@ async function rescanNeo() {
   } catch (e) {
     if (detail) detail.textContent = 'Scan request failed';
   } finally {
-    if (btn) btn.disabled = false;
+    setButtonBusy(btn, false);
   }
 }
 
@@ -1523,6 +2148,8 @@ document.getElementById('neo-rescan')?.addEventListener('click', () => rescanNeo
 
 async function refreshFiles() {
   if (!filesEmpty || !fileList) return;
+  const button = document.querySelector('#refresh-files');
+  setButtonBusy(button, true, 'Refreshing…');
   try {
     const response = await authFetch('/files');
     if (!response.ok) return;
@@ -1539,6 +2166,8 @@ async function refreshFiles() {
     const detailEl = document.querySelector('#backup-count-detail');
     if (countEl) countEl.textContent = '--';
     if (detailEl) detailEl.textContent = 'Saved on SD or internal storage';
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -1557,7 +2186,9 @@ function updateAppletCountFromCache() {
 }
 
 async function refreshApplets(opts = {}) {
-  if (opts.confirm && !confirmLeaveKeyboardMode('Refreshing applets')) return;
+  if (!(await ensureManagerMode('Refreshing applets', { confirm: !!opts.confirm }))) return;
+  const button = document.querySelector('#refresh-applets');
+  setButtonBusy(button, true, 'Refreshing…');
   try {
     const response = await authFetch('/command/list_applets');
     if (!response.ok) return;
@@ -1566,6 +2197,10 @@ async function refreshApplets(opts = {}) {
     if (appletList) {
       appletList.hidden = applets.length === 0;
       appletList.innerHTML = applets.map((applet) => renderApplet(applet)).join('');
+    }
+    rememberInstalledApplets(applets);
+    if (document.getElementById('stock-store-dialog')?.open) {
+      applyStockStoreFilter();
     }
     sessionStorage.setItem('neo_applet_count', String(applets.length));
     const countEl = document.querySelector('#applet-count');
@@ -1579,6 +2214,673 @@ async function refreshApplets(opts = {}) {
     const detailEl = document.querySelector('#applet-count-detail');
     if (countEl) countEl.textContent = '--';
     if (detailEl) detailEl.textContent = 'Connect the NEO to inspect applets';
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+const STOCK_CATEGORY_LABELS = {
+  game: 'Game',
+  organize: 'Organize',
+  write: 'Write',
+  focus: 'Focus',
+  learn: 'Learn',
+  app: 'App',
+};
+
+const STOCK_CATEGORY_BADGES = {
+  game: 'GAME',
+  organize: 'ORG',
+  write: 'WRITE',
+  focus: 'FOCUS',
+  learn: 'LEARN',
+  app: 'APP',
+};
+
+let stockStoreFilter = 'all';
+let stockStoreQuery = '';
+let stockStoreCache = [];
+let stockStorePendingInstall = null;
+let stockStoreInstallBusy = false;
+/** Applet IDs currently on the Neo (from last Refresh / install). */
+let installedAppletIds = new Set();
+
+function rememberInstalledApplets(applets) {
+  installedAppletIds = new Set(
+    (Array.isArray(applets) ? applets : [])
+      .map((a) => Number(a?.id ?? a?.applet_id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  );
+}
+
+function isStockAppletInstalled(app) {
+  const id = Number(app?.applet_id);
+  return Number.isFinite(id) && installedAppletIds.has(id);
+}
+
+function stockMatchesQuery(app, query) {
+  if (!query) return true;
+  const hay = [
+    app.name,
+    app.slug,
+    app.summary,
+    app.blurb,
+    app.how_to,
+    app.category,
+    stockCategoryLabel(app.category || 'app'),
+    app.applet_id != null ? `0x${Number(app.applet_id).toString(16)}` : '',
+    app.applet_id != null ? String(app.applet_id) : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return query.split(/\s+/).every((token) => token && hay.includes(token));
+}
+
+function stockCategoryLabel(cat) {
+  return STOCK_CATEGORY_LABELS[cat] || (cat ? cat.charAt(0).toUpperCase() + cat.slice(1) : 'App');
+}
+
+function stockCategoryBadge(cat) {
+  return STOCK_CATEGORY_BADGES[cat] || stockCategoryLabel(cat).slice(0, 4).toUpperCase();
+}
+
+function renderStockApplet(app) {
+  const ver = `${app.version_major}.${app.version_minor}${app.version_rev || ''}`;
+  const bytes = Number(app.bytes || 0);
+  const bundled = app.bundled !== false && bytes > 0;
+  const cat = app.category || 'app';
+  const catLabel = stockCategoryLabel(cat);
+  const summary = app.summary || app.blurb || '';
+  const howTo = app.how_to || '';
+  const installed = isStockAppletInstalled(app);
+  const installBtn = !bundled
+    ? `<button class="table-action" type="button" disabled title="Rebuild firmware with tools/build-stock-applets.ps1">Not bundled</button>`
+    : installed
+      ? `<button class="table-action" type="button" data-stock-action="install" data-stock-slug="${escapeHtml(app.slug)}" title="Replace the build already on the Neo">Reinstall</button>`
+      : `<button class="table-action primary-action" type="button" data-stock-action="install" data-stock-slug="${escapeHtml(app.slug)}">Install on Neo</button>`;
+  const deckBtn = app.slug === 'flash-cards' && bundled
+    ? `<button class="table-action" type="button" data-stock-action="edit-decks" data-stock-slug="flash-cards" title="Open the Flash Cards deck library">Edit decks</button>`
+    : '';
+  const installedBadge = installed
+    ? `<span class="store-card-installed" title="This applet ID is already on the connected Neo">Installed</span>`
+    : '';
+  return `<article class="store-card${installed ? ' is-installed' : ''}" data-category="${escapeHtml(cat)}" data-stock-slug="${escapeHtml(app.slug)}">
+  <div class="store-card-top">
+    <span class="store-card-icon cat-${escapeHtml(cat)}" aria-hidden="true">${escapeHtml(stockCategoryBadge(cat))}</span>
+    <div>
+      <h3 class="store-card-title">${escapeHtml(app.name || app.slug)}${installedBadge}</h3>
+      <p class="store-card-meta">${escapeHtml(catLabel)} · ID 0x${Number(app.applet_id).toString(16).toUpperCase()} · v${escapeHtml(ver)} · ${formatBytes(bytes)}</p>
+    </div>
+  </div>
+  <p class="store-card-summary">${escapeHtml(summary)}</p>
+  ${howTo ? `<p class="store-card-howto"><strong>On the Neo:</strong> ${escapeHtml(howTo)}</p>` : ''}
+  <div class="store-card-actions applet-actions">${deckBtn}${installBtn}</div>
+</article>`;
+}
+
+function renderStockFilters(applets) {
+  const filters = document.querySelector('#stock-store-filters');
+  const toolbar = document.querySelector('#stock-store-toolbar');
+  if (!filters || !toolbar) return;
+  const cats = [];
+  applets.forEach((a) => {
+    const c = a.category || 'app';
+    if (!cats.includes(c)) cats.push(c);
+  });
+  const chips = [`<button type="button" class="store-filter${stockStoreFilter === 'all' ? ' is-active' : ''}" data-store-filter="all">All</button>`]
+    .concat(cats.map((c) => {
+      const active = stockStoreFilter === c ? ' is-active' : '';
+      return `<button type="button" class="store-filter${active}" data-store-filter="${escapeHtml(c)}">${escapeHtml(stockCategoryLabel(c))}</button>`;
+    }));
+  filters.innerHTML = chips.join('');
+  toolbar.hidden = applets.length === 0;
+}
+
+function applyStockStoreFilter() {
+  const list = document.querySelector('#stock-applet-list');
+  const empty = document.querySelector('#stock-applets-empty');
+  const countEl = document.querySelector('#stock-store-count');
+  const filters = document.querySelectorAll('#stock-store-filters .store-filter');
+  filters.forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.storeFilter === stockStoreFilter);
+  });
+  const query = stockStoreQuery.trim().toLowerCase();
+  let filtered = stockStoreFilter === 'all'
+    ? stockStoreCache
+    : stockStoreCache.filter((a) => (a.category || 'app') === stockStoreFilter);
+  filtered = filtered.filter((a) => stockMatchesQuery(a, query));
+  if (list) {
+    list.innerHTML = filtered.map(renderStockApplet).join('');
+    list.hidden = filtered.length === 0;
+  }
+  if (empty && stockStoreCache.length) {
+    empty.hidden = filtered.length > 0;
+    if (!filtered.length) {
+      empty.querySelector('h3').textContent = query ? 'No matching applets' : 'No applets in this category';
+      empty.querySelector('p').textContent = query
+        ? 'Try another search term or clear the search box.'
+        : 'Pick another category or search the full catalog.';
+    }
+  }
+  if (countEl) {
+    if (!stockStoreCache.length) {
+      countEl.textContent = '';
+    } else if (query || stockStoreFilter !== 'all') {
+      countEl.textContent = `${filtered.length} of ${stockStoreCache.length}`;
+    } else {
+      countEl.textContent = `${stockStoreCache.length} applet${stockStoreCache.length === 1 ? '' : 's'} in firmware`;
+    }
+  }
+}
+
+/** Normalize Anki Notes TXT / CSV / | or tab decks into front|back lines (max 16 cards for Neo). */
+function normalizeFlashDeck(text) {
+  const lines = String(text || '')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#') && !l.startsWith('tags:'));
+  const out = [];
+  for (const line of lines) {
+    let front = '';
+    let back = '';
+    if (line.includes('|')) {
+      const i = line.indexOf('|');
+      front = line.slice(0, i).trim();
+      back = line.slice(i + 1).trim();
+    } else if (line.includes('\t')) {
+      const parts = line.split('\t');
+      front = (parts[0] || '').trim();
+      back = (parts[1] || '').trim();
+    } else if (line.includes(',')) {
+      // Simple CSV: "front","back" or front,back
+      const m = line.match(/^"([^"]*)"\s*,\s*"([^"]*)"/) || line.match(/^([^,]+)\s*,\s*(.+)$/);
+      if (m) {
+        front = m[1].trim();
+        back = m[2].trim().replace(/^"|"$/g, '');
+      }
+    }
+    // Strip simple HTML from Anki exports
+    front = front.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    back = back.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (front && back) {
+      out.push(`${front.slice(0, 23)}|${back.slice(0, 23)}`);
+    }
+    if (out.length >= 16) break;
+  }
+  return out.join('\n') + (out.length ? '\n' : '');
+}
+
+const FLASH_PROTECTED_ID = 'en-nl-basic';
+let flashDeckList = [];
+let flashDeckActiveId = null;
+let flashDeckDraft = null;
+
+function flashDeckIdFromName(name) {
+  const raw = String(name || 'deck')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 22);
+  return raw || 'deck';
+}
+
+function cardsFromPipeText(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const i = line.indexOf('|');
+      if (i < 0) return null;
+      const front = line.slice(0, i).trim().slice(0, 23);
+      const back = line.slice(i + 1).trim().slice(0, 23);
+      if (!front || !back) return null;
+      return { front, back };
+    })
+    .filter(Boolean)
+    .slice(0, 16);
+}
+
+function collectFlashCardsFromDom(opts = {}) {
+  /* keepIncomplete: preserve blank/partial rows while editing.
+     Save/push strip those so the Neo only gets complete cards. */
+  const keepIncomplete = opts.keepIncomplete === true;
+  const rows = document.querySelectorAll('#flashdeck-cards .flashdeck-card-row');
+  const cards = [];
+  rows.forEach((row) => {
+    const front = row.querySelector('[data-flash-side="front"]')?.value?.trim().slice(0, 23) || '';
+    const back = row.querySelector('[data-flash-side="back"]')?.value?.trim().slice(0, 23) || '';
+    if (keepIncomplete || (front && back)) {
+      cards.push({ front, back });
+    }
+  });
+  return cards;
+}
+
+function completeFlashCards(cards) {
+  return (Array.isArray(cards) ? cards : [])
+    .map((c) => ({
+      front: String(c?.front || '').trim().slice(0, 23),
+      back: String(c?.back || '').trim().slice(0, 23),
+    }))
+    .filter((c) => c.front && c.back);
+}
+
+function syncFlashDraftFromDom() {
+  if (!flashDeckDraft) return;
+  const nameEl = document.querySelector('#flashdeck-name');
+  flashDeckDraft.name = (nameEl?.value || '').trim().slice(0, 40) || 'Untitled deck';
+  flashDeckDraft.cards = collectFlashCardsFromDom({ keepIncomplete: true });
+}
+
+function renderFlashSetList() {
+  const list = document.querySelector('#flashdeck-set-list');
+  if (!list) return;
+  if (!flashDeckList.length) {
+    list.innerHTML = '<p class="flashdeck-set-meta">No sets yet.</p>';
+    return;
+  }
+  list.innerHTML = flashDeckList.map((d) => {
+    const active = d.id === flashDeckActiveId ? ' is-active' : '';
+    const n = Number(d.cards || 0);
+    return `<button type="button" class="flashdeck-set${active}" data-flash-id="${escapeHtml(d.id)}" role="listitem">
+      <span class="flashdeck-set-name">${escapeHtml(d.name || d.id)}</span>
+      <span class="flashdeck-set-meta">${n} card${n === 1 ? '' : 's'}</span>
+    </button>`;
+  }).join('');
+}
+
+function renderFlashEditor() {
+  const layout = document.querySelector('#flashdeck-layout');
+  const empty = document.querySelector('#flashdeck-empty');
+  const meta = document.querySelector('#flashdeck-meta');
+  const nameEl = document.querySelector('#flashdeck-name');
+  const cardsEl = document.querySelector('#flashdeck-cards');
+  const delBtn = document.querySelector('#flashdeck-delete');
+  if (!layout || !cardsEl) return;
+
+  if (!getAuthToken()) {
+    layout.hidden = true;
+    if (empty) {
+      empty.hidden = false;
+      empty.querySelector('h3').textContent = 'Sign in to edit decks';
+      empty.querySelector('p').textContent = 'Your flashcard sets appear here after you sign in.';
+    }
+    return;
+  }
+
+  if (!flashDeckDraft) {
+    layout.hidden = true;
+    if (empty) {
+      empty.hidden = false;
+      empty.querySelector('h3').textContent = 'No deck selected';
+      empty.querySelector('p').textContent = 'Pick a set on the left, or create a new one.';
+    }
+    return;
+  }
+
+  if (empty) empty.hidden = true;
+  layout.hidden = false;
+  if (nameEl) nameEl.value = flashDeckDraft.name || '';
+  const n = flashDeckDraft.cards?.length || 0;
+  if (meta) {
+    meta.textContent = `ID ${flashDeckDraft.id} · ${n}/16 cards · sides ≤ 23 chars`;
+  }
+  if (delBtn) {
+    delBtn.disabled = flashDeckDraft.id === FLASH_PROTECTED_ID;
+    delBtn.title = flashDeckDraft.id === FLASH_PROTECTED_ID
+      ? 'The English→Dutch starter set cannot be deleted'
+      : 'Delete this set from the buddy';
+  }
+  const cards = Array.isArray(flashDeckDraft.cards) ? flashDeckDraft.cards : [];
+  const rows = cards.length ? cards : [{ front: '', back: '' }];
+  cardsEl.innerHTML = rows.map((c, i) => `<div class="flashdeck-card-row" data-card-index="${i}">
+    <input type="text" maxlength="23" data-flash-side="front" placeholder="Front" value="${escapeHtml(c.front || '')}" autocomplete="off">
+    <input type="text" maxlength="23" data-flash-side="back" placeholder="Back" value="${escapeHtml(c.back || '')}" autocomplete="off">
+    <button class="table-action" type="button" data-flash-remove-card title="Remove card">Remove</button>
+  </div>`).join('');
+}
+
+async function loadFlashDeck(id) {
+  if (!id) return;
+  syncFlashDraftFromDom();
+  try {
+    const response = await apiRequest(`/flashdecks/${encodeURIComponent(id)}`);
+    const data = await response.json();
+    flashDeckActiveId = id;
+    flashDeckDraft = {
+      id,
+      name: data.name || id,
+      cards: Array.isArray(data.cards) ? data.cards.map((c) => ({
+        front: String(c.front || '').slice(0, 23),
+        back: String(c.back || '').slice(0, 23),
+      })) : [],
+    };
+    renderFlashSetList();
+    renderFlashEditor();
+  } catch (error) {
+    showNotice(error.message || 'Could not load deck', 'error');
+  }
+}
+
+async function refreshFlashDecks(opts = {}) {
+  const button = document.querySelector('#flashdeck-refresh');
+  const empty = document.querySelector('#flashdeck-empty');
+  const layout = document.querySelector('#flashdeck-layout');
+  if (!getAuthToken()) {
+    flashDeckList = [];
+    flashDeckActiveId = null;
+    flashDeckDraft = null;
+    renderFlashSetList();
+    renderFlashEditor();
+    return;
+  }
+  setButtonBusy(button, true, 'Loading…');
+  try {
+    const response = await apiRequest('/flashdecks');
+    const data = await response.json();
+    flashDeckList = Array.isArray(data.decks) ? data.decks : [];
+    if (!flashDeckActiveId || !flashDeckList.some((d) => d.id === flashDeckActiveId)) {
+      flashDeckActiveId = flashDeckList[0]?.id || null;
+    }
+    if (flashDeckActiveId && opts.keepDraft !== true) {
+      await loadFlashDeck(flashDeckActiveId);
+    } else {
+      renderFlashSetList();
+      renderFlashEditor();
+    }
+    if (!flashDeckList.length) {
+      if (layout) layout.hidden = true;
+      if (empty) {
+        empty.hidden = false;
+        empty.querySelector('h3').textContent = 'No decks yet';
+        empty.querySelector('p').textContent = 'Create a new set or import a file.';
+      }
+    }
+  } catch (error) {
+    flashDeckList = [];
+    flashDeckDraft = null;
+    if (layout) layout.hidden = true;
+    if (empty) {
+      empty.hidden = false;
+      empty.querySelector('h3').textContent = 'Deck library unavailable';
+      empty.querySelector('p').textContent = error.message || 'Sign in and try again.';
+    }
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+async function saveFlashDeck() {
+  if (!flashDeckDraft?.id) return;
+  syncFlashDraftFromDom();
+  const cards = completeFlashCards(flashDeckDraft.cards);
+  if (!cards.length) {
+    showNotice('Add at least one card with both sides filled.', 'warning');
+    return;
+  }
+  try {
+    showNotice('Saving deck…', 'info');
+    await apiRequest(`/flashdecks/${encodeURIComponent(flashDeckDraft.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: flashDeckDraft.name, cards }),
+    });
+    flashDeckDraft.cards = cards;
+    showNotice(`Saved “${flashDeckDraft.name}” (${cards.length} cards).`, 'success');
+    await refreshFlashDecks({ keepDraft: false });
+  } catch (error) {
+    showNotice(error.message || 'Save failed', 'error');
+  }
+}
+
+async function pushFlashDeck() {
+  if (!flashDeckDraft?.id) return;
+  syncFlashDraftFromDom();
+  const cards = completeFlashCards(flashDeckDraft.cards);
+  if (!cards.length) {
+    showNotice('Save at least one card before pushing.', 'warning');
+    return;
+  }
+  if (!window.confirm(`Save and push “${flashDeckDraft.name}” to Flash Cards on the Neo?\n\nThis replaces the active Neo deck (max 16 cards).`)) {
+    return;
+  }
+  if (!(await ensureManagerMode('Pushing a Flash Cards deck', { confirm: false }))) return;
+  try {
+    await apiRequest(`/flashdecks/${encodeURIComponent(flashDeckDraft.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: flashDeckDraft.name, cards }),
+    });
+    flashDeckDraft.cards = cards;
+    showNotice('Pushing deck to Neo…', 'info');
+    await apiRequest(`/flashdecks/${encodeURIComponent(flashDeckDraft.id)}/push`, { method: 'POST' });
+    showNotice(`Pushed “${flashDeckDraft.name}”. Open Flash Cards on the Neo.`, 'success');
+    await refreshFlashDecks();
+  } catch (error) {
+    const msg = String(error.message || error);
+    if (msg.includes('neo_not_connected') || msg.toLowerCase().includes('neo not connected')) {
+      showNotice('Connect the Neo by USB, then push again.', 'warning');
+    } else {
+      showNotice(msg || 'Push failed', 'error');
+    }
+  }
+}
+
+async function deleteFlashDeck() {
+  if (!flashDeckDraft?.id || flashDeckDraft.id === FLASH_PROTECTED_ID) return;
+  if (!window.confirm(`Delete set “${flashDeckDraft.name}” from the buddy?`)) return;
+  try {
+    await apiRequest(`/flashdecks/${encodeURIComponent(flashDeckDraft.id)}`, { method: 'DELETE' });
+    showNotice('Set deleted.', 'success');
+    flashDeckActiveId = null;
+    flashDeckDraft = null;
+    await refreshFlashDecks();
+  } catch (error) {
+    showNotice(error.message || 'Delete failed', 'error');
+  }
+}
+
+function newFlashDeck() {
+  const name = window.prompt('Name for the new set:', 'My cards');
+  if (name == null) return;
+  const trimmed = name.trim().slice(0, 40) || 'Untitled deck';
+  let id = flashDeckIdFromName(trimmed);
+  if (flashDeckList.some((d) => d.id === id) || id === FLASH_PROTECTED_ID) {
+    id = `${id}-${Date.now().toString(36).slice(-4)}`.slice(0, 23);
+  }
+  flashDeckActiveId = id;
+  flashDeckDraft = { id, name: trimmed, cards: [{ front: '', back: '' }] };
+  renderFlashSetList();
+  renderFlashEditor();
+}
+
+async function importFlashDeckToLibrary(file) {
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const cards = cardsFromPipeText(normalizeFlashDeck(text));
+    if (!cards.length) {
+      showNotice('No cards found. Export Anki as Notes plain text, or use front|back / CSV lines.', 'warning');
+      return;
+    }
+    const base = file.name.replace(/\.[^.]+$/, '') || 'imported';
+    const name = base.slice(0, 40);
+    let id = flashDeckIdFromName(base);
+    if (flashDeckList.some((d) => d.id === id) || id === FLASH_PROTECTED_ID) {
+      id = `${id}-${Date.now().toString(36).slice(-4)}`.slice(0, 23);
+    }
+    showNotice(`Importing ${cards.length} cards…`, 'info');
+    await apiRequest(`/flashdecks/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, cards }),
+    });
+    flashDeckActiveId = id;
+    showNotice(`Imported “${name}”. Push to Neo when ready.`, 'success');
+    await refreshFlashDecks();
+  } catch (error) {
+    showNotice(error.message || 'Import failed', 'error');
+  }
+}
+
+async function refreshStockApplets() {
+  const button = document.querySelector('#refresh-stock-applets');
+  const empty = document.querySelector('#stock-applets-empty');
+  const list = document.querySelector('#stock-applet-list');
+  const toolbar = document.querySelector('#stock-store-toolbar');
+  setButtonBusy(button, true, 'Loading…');
+  try {
+    const response = await apiRequest('/neo/stock-applets');
+    if (!response.ok) throw new Error('Could not load Applet Store catalog');
+    const data = await response.json();
+    const applets = Array.isArray(data.applets) ? data.applets : [];
+    stockStoreCache = applets;
+    if (stockStoreFilter !== 'all' && !applets.some((a) => (a.category || 'app') === stockStoreFilter)) {
+      stockStoreFilter = 'all';
+    }
+    if (empty) {
+      empty.hidden = applets.length > 0;
+      if (!applets.length) {
+        const paused = data.installs_enabled === false;
+        empty.querySelector('h3').textContent = paused ? 'Store paused' : 'No stock applets';
+        empty.querySelector('p').textContent = paused
+          ? (data.note || 'Applet Store installs are paused while stock applets are retested.')
+          : 'Rebuild firmware after running tools/build-stock-applets.ps1.';
+      }
+    }
+    renderStockFilters(applets);
+    if (list) {
+      list.hidden = applets.length === 0;
+    }
+    applyStockStoreFilter();
+  } catch (error) {
+    stockStoreCache = [];
+    if (toolbar) toolbar.hidden = true;
+    if (empty) {
+      empty.hidden = false;
+      empty.querySelector('h3').textContent = 'Applet Store unavailable';
+      empty.querySelector('p').textContent = error.message || 'Sign in and try again.';
+    }
+    if (list) {
+      list.hidden = true;
+      list.innerHTML = '';
+    }
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+function setStockStoreStatus(message, type = 'info') {
+  const storeStatus = document.getElementById('stock-store-status');
+  if (!storeStatus) {
+    if (message) showNotice(message, type);
+    return;
+  }
+  storeStatus.textContent = message || '';
+  storeStatus.dataset.type = type;
+  storeStatus.hidden = !message;
+  if (message) {
+    queueMicrotask(() => {
+      try {
+        storeStatus.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } catch (_) { /* ignore */ }
+    });
+  }
+}
+
+function hideStockStoreConfirm() {
+  stockStorePendingInstall = null;
+  const panel = document.getElementById('stock-store-confirm');
+  if (panel) panel.hidden = true;
+  const copy = document.getElementById('stock-store-confirm-copy');
+  if (copy) copy.textContent = '';
+}
+
+function promptStockStoreInstall(slug, name) {
+  if (!slug || stockStoreInstallBusy) return;
+  const app = stockStoreCache.find((a) => a.slug === slug);
+  const detail = app?.summary || app?.blurb || '';
+  const how = app?.how_to ? `\n\nOn the Neo: ${app.how_to}` : '';
+  const reinstall = isStockAppletInstalled(app);
+  stockStorePendingInstall = { slug, name: name || slug };
+  setStockStoreStatus('', 'info');
+  const panel = document.getElementById('stock-store-confirm');
+  const copy = document.getElementById('stock-store-confirm-copy');
+  const okBtn = document.getElementById('stock-store-confirm-ok');
+  if (copy) {
+    copy.textContent = reinstall
+      ? `Reinstall ${name || slug} on the connected Neo?\n\nThis replaces the build already installed.${how}\n\nThis switches briefly to manager mode, then returns to keyboard mode.`.trim()
+      : `Install ${name || slug} onto the connected Neo?\n\n${detail}${how}\n\nThis switches briefly to manager mode, then returns to keyboard mode.`.trim();
+  }
+  if (okBtn) okBtn.textContent = reinstall ? 'Reinstall on Neo' : 'Install on Neo';
+  if (panel) {
+    panel.hidden = false;
+    panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  queueMicrotask(() => document.getElementById('stock-store-confirm-ok')?.focus());
+}
+
+async function installStockApplet(slug, name) {
+  if (!slug || stockStoreInstallBusy) return;
+  hideStockStoreConfirm();
+  if (!(await ensureManagerMode(`Installing ${name || slug}`, { confirm: false }))) return;
+
+  const installBtn = document.querySelector(
+    `#stock-applet-list [data-stock-action="install"][data-stock-slug="${typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(String(slug)) : String(slug).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`
+  );
+  stockStoreInstallBusy = true;
+  setButtonBusy(installBtn, true, 'Installing…');
+  setStockStoreStatus(`Installing ${name || slug}…`, 'info');
+  try {
+    await apiRequest(`/neo/stock-applets/${encodeURIComponent(slug)}/install`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const app = stockStoreCache.find((a) => a.slug === slug);
+    const appletId = Number(app?.applet_id);
+    if (Number.isFinite(appletId) && appletId > 0) {
+      installedAppletIds.add(appletId);
+    }
+    applyStockStoreFilter();
+    const done = `${name || slug} installed on the Neo. Open it from Applets, or Reinstall to replace it.`;
+    setStockStoreStatus(done, 'success');
+    showNotice(done, 'success');
+    try {
+      await refreshApplets({ confirm: false });
+    } catch (_) { /* card state already updated from applet_id */ }
+    await refreshStatus();
+  } catch (error) {
+    const msg = String(error.message || error);
+    let notice = msg || 'Install failed';
+    let type = 'error';
+    if (msg.includes('already_installed')) {
+      notice = 'Already installed — use Reinstall to replace this build, or remove it first.';
+      type = 'warning';
+      const app = stockStoreCache.find((a) => a.slug === slug);
+      const appletId = Number(app?.applet_id);
+      if (Number.isFinite(appletId) && appletId > 0) {
+        installedAppletIds.add(appletId);
+        applyStockStoreFilter();
+      }
+    } else if (msg.includes('neo_not_connected')) {
+      notice = 'Connect the Neo by USB, then install again.';
+      type = 'warning';
+    } else if (msg.includes('insufficient_space')) {
+      notice = 'Not enough free ROM or RAM on the Neo. Remove an applet and retry.';
+      type = 'warning';
+    } else if (msg.includes('not_bundled')) {
+      notice = 'That applet is not bundled in this firmware image.';
+      type = 'warning';
+    }
+    setStockStoreStatus(notice, type);
+    showNotice(notice, type);
+  } finally {
+    stockStoreInstallBusy = false;
+    setButtonBusy(installBtn, false);
   }
 }
 
@@ -1589,7 +2891,7 @@ async function refreshNeoFiles(opts = {}) {
     guidance.textContent = 'Sign in to scan documents on the connected NEO.';
     return;
   }
-  if (opts.confirm && !confirmLeaveKeyboardMode('Scanning Neo documents')) return;
+  if (!(await ensureManagerMode('Scanning Neo documents', { confirm: !!opts.confirm }))) return;
   setButtonBusy(button, true, 'Scanning...');
   guidance.textContent = 'Scanning AlphaWord document slots (keyboard mode paused)…';
   try {
@@ -1613,10 +2915,20 @@ async function refreshNeoFiles(opts = {}) {
     const alphaWordFiles = Array.isArray(files)
       ? files.filter((file) => Number(file.applet_id || NEO_ALPHAWORD_ID) === NEO_ALPHAWORD_ID)
       : [];
-    renderNeoFiles(alphaWordFiles);
-    guidance.textContent = alphaWordFiles.length
-      ? `${alphaWordFiles.length} AlphaWord document${alphaWordFiles.length === 1 ? '' : 's'} on the connected NEO.`
-      : 'No AlphaWord documents were reported by the connected NEO.';
+    /* used_size = exportable text bytes (firmware); 0 means pad-only / empty — hide like backup. */
+    const isEmptySlot = (file) => Number(file.used_size ?? 0) <= 0;
+    const emptySlots = alphaWordFiles.filter(isEmptySlot).length;
+    const documents = alphaWordFiles.filter((file) => !isEmptySlot(file));
+    renderNeoFiles(documents);
+    if (documents.length) {
+      guidance.textContent = emptySlots
+        ? `${documents.length} AlphaWord document${documents.length === 1 ? '' : 's'} with text · ${emptySlots} empty slot${emptySlots === 1 ? '' : 's'} hidden.`
+        : `${documents.length} AlphaWord document${documents.length === 1 ? '' : 's'} on the connected NEO.`;
+    } else {
+      guidance.textContent = emptySlots
+        ? `No text documents — ${emptySlots} empty AlphaWord slot${emptySlots === 1 ? '' : 's'} hidden.`
+        : 'No AlphaWord documents were reported by the connected NEO.';
+    }
   } catch (error) {
     neoFilesEmpty.hidden = false;
     neoFileTableWrap.hidden = true;
@@ -1631,20 +2943,114 @@ async function refreshNeoFiles(opts = {}) {
 function renderNeoFiles(files) {
   neoFilesEmpty.hidden = files.length > 0;
   neoFileTableWrap.hidden = files.length === 0;
+  if (files.length === 0) {
+    neoFileList.innerHTML = '';
+    const emptyTitle = neoFilesEmpty?.querySelector('h3');
+    const emptyCopy = neoFilesEmpty?.querySelector('p');
+    if (emptyTitle) emptyTitle.textContent = 'No documents with text';
+    if (emptyCopy) {
+      emptyCopy.textContent =
+        'Empty AlphaWord slots (512 B reserved, no text) are hidden from this list.';
+    }
+    return;
+  }
   neoFileList.innerHTML = files.map((file) => {
+    const usedSize = Number(file.used_size ?? 0);
     const allocatedSize = Number(file.alloc_size || file.allocated_size || 0);
-    const isLarge = allocatedSize >= LOCAL_BACKUP_WARNING_BYTES;
+    const isLarge = usedSize >= LOCAL_BACKUP_WARNING_BYTES;
     const fileIndex = Number(file.file_index || file.index || 0);
     const appletId = NEO_ALPHAWORD_ID;
-    return `<tr${isLarge ? ' class="is-large"' : ''}><td><strong>${escapeHtml(file.name || 'Untitled')}</strong>${isLarge ? '<small class="file-warning">Review before restoring</small>' : ''}</td><td>${fileIndex || '—'}</td><td>${formatBytes(allocatedSize)}</td><td class="table-actions"><button class="table-action" type="button" data-file-action="read" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Read</button><button class="table-action" type="button" data-file-action="download" data-applet-id="${appletId}" data-file-index="${fileIndex}">Download</button><button class="table-action" type="button" data-file-action="write" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Write</button><button class="table-action danger-action" type="button" data-file-action="clear" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Clear</button></td></tr>`;
+    const rowClass = isLarge ? 'is-large' : '';
+    const sizeLabel =
+      allocatedSize > usedSize
+        ? `${formatBytes(usedSize)} · ${formatBytes(allocatedSize)} reserved`
+        : formatBytes(usedSize);
+    return `<tr${rowClass ? ` class="${rowClass}"` : ''}><td><strong>${escapeHtml(file.name || 'Untitled')}</strong>${isLarge ? '<small class="file-warning">Review before restoring</small>' : ''}</td><td>${fileIndex || '—'}</td><td>${sizeLabel}</td><td class="table-actions"><button class="table-action" type="button" data-file-action="read" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Read</button><button class="table-action" type="button" data-file-action="download" data-applet-id="${appletId}" data-file-index="${fileIndex}">Download</button><button class="table-action" type="button" data-file-action="write" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Write</button><button class="table-action danger-action" type="button" data-file-action="clear" data-applet-id="${appletId}" data-file-index="${fileIndex}" data-file-name="${escapeHtml(file.name || '')}">Clear</button></td></tr>`;
   }).join('');
+}
+
+const FLASH_CARDS_APPLET_ID = 0xA1B6;
+
+function isFlashCardsApplet(applet) {
+  const id = Number(applet?.id ?? applet);
+  if (id === FLASH_CARDS_APPLET_ID) return true;
+  const name = String(applet?.name || '').toLowerCase();
+  return name.includes('flash card');
 }
 
 function renderApplet(applet) {
   const id = Number(applet.id);
-  const title = escapeHtml(applet.name || `Applet ${id}`);
+  const rawName = (applet.name || `Applet ${id}`).toString();
+  const title = escapeHtml(rawName);
   const details = `ID ${id} · ${applet.file_count} file${applet.file_count === 1 ? '' : 's'} · ${formatBytes(applet.rom_size)} ROM`;
-  return `<div class="action-row applet-row"><span class="action-icon blue">APP</span><span><b>${title}</b><small>${details}</small></span><span class="applet-actions"><button class="table-action" type="button" data-applet-action="download" data-applet-id="${id}" data-applet-name="${title}">Download</button><button class="table-action danger-action" type="button" data-applet-action="remove" data-applet-id="${id}" data-applet-name="${title}">Remove</button></span></div>`;
+  const settingsBtn = isFlashCardsApplet(applet)
+    ? `<button class="table-action" type="button" data-applet-action="flashdeck-settings" data-applet-id="${id}" title="Open Flash Cards deck library">Settings</button>`
+    : '';
+  /* Encode name for data-* so Download saves a real filename (not HTML entities). */
+  return `<div class="action-row applet-row"><span class="action-icon blue">APP</span><span><b>${title}</b><small>${details}</small></span><span class="applet-actions">${settingsBtn}<button class="table-action" type="button" data-applet-action="download" data-applet-id="${id}" data-applet-name="${encodeURIComponent(rawName)}">Download</button><button class="table-action danger-action" type="button" data-applet-action="remove" data-applet-id="${id}" data-applet-name="${encodeURIComponent(rawName)}">Remove</button></span></div>`;
+}
+
+async function openStockStoreDialog() {
+  const dlg = document.getElementById('stock-store-dialog');
+  if (!dlg || typeof dlg.showModal !== 'function') {
+    showNotice('Applet Store dialog is missing from this portal build.', 'error');
+    return;
+  }
+  /* Open immediately (same pattern as Logs). Do not dismiss on backdrop —
+     that classic dialog bug made Install from store look like a dead button. */
+  try {
+    if (!dlg.open) dlg.showModal();
+  } catch (error) {
+    showNotice(`Could not open Applet Store: ${error.message || error}`, 'error');
+    return;
+  }
+  hideStockStoreConfirm();
+  setStockStoreStatus('', 'info');
+  const empty = document.querySelector('#stock-applets-empty');
+  const list = document.querySelector('#stock-applet-list');
+  const toolbar = document.querySelector('#stock-store-toolbar');
+  if (toolbar) toolbar.hidden = true;
+  if (list) {
+    list.hidden = true;
+    list.innerHTML = '';
+  }
+  if (empty) {
+    empty.hidden = false;
+    const h = empty.querySelector('h3');
+    const p = empty.querySelector('p');
+    if (h) h.textContent = 'Loading catalog…';
+    if (p) p.textContent = 'Stock applets appear here when the buddy responds.';
+  }
+  const search = document.querySelector('#stock-store-search');
+  if (search) {
+    search.value = stockStoreQuery;
+    queueMicrotask(() => {
+      try { search.focus(); } catch (_) { /* ignore */ }
+    });
+  }
+  try {
+    await refreshStockApplets();
+    /* Sync Installed badges from the Neo applet list (best-effort). */
+    try {
+      await refreshApplets({ confirm: false });
+    } catch (_) { /* catalog still usable without live install state */ }
+  } catch (error) {
+    setStockStoreStatus(error.message || 'Could not load catalog', 'error');
+    showNotice(error.message || 'Could not load Applet Store catalog', 'error');
+  }
+}
+window.openStockStoreDialog = openStockStoreDialog;
+
+async function openFlashDeckBuilder() {
+  const dlg = document.getElementById('flashdeck-dialog');
+  if (!dlg) return;
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  try {
+    if (!dlg.open) dlg.showModal();
+  } catch (_) {
+    return;
+  }
+  await refreshFlashDecks({ keepDraft: true });
 }
 
 function openAppletDialog(operation, details = {}) {
@@ -1655,9 +3061,18 @@ function openAppletDialog(operation, details = {}) {
   document.querySelector('#applet-install-fields').hidden = !install;
   document.querySelector('#applet-submit').textContent = install ? 'Install applet' : 'Remove applet';
   document.querySelector('#applet-dialog-copy').textContent = install
-    ? 'The NEO validates the package header and checks available ROM and RAM before installation.'
+    ? 'Choose a validated .os3kapp package. The NEO checks the header and free ROM/RAM before writing. This switches briefly to manager mode, then returns to keyboard mode.'
     : 'This permanently removes the selected SmartApplet and its files from the NEO. This cannot be undone.';
-  document.querySelector('#applet-dialog-status').textContent = '';
+  setDialogStatus(document.querySelector('#applet-dialog-status'), '', '');
+  const fileInput = document.querySelector('#applet-file');
+  if (fileInput) {
+    fileInput.value = '';
+    fileInput.required = install;
+  }
+  const fileName = document.querySelector('#applet-file-name');
+  if (fileName) fileName.textContent = 'Choose a package file';
+  const replace = document.querySelector('#applet-replace');
+  if (replace) replace.checked = false;
   appletDialog.dataset.appletId = details.id || '';
   appletDialog.showModal();
 }
@@ -1665,18 +3080,18 @@ function openAppletDialog(operation, details = {}) {
 async function invokeFileAction(action, appletId, fileIndex, fileName = '') {
   if (action === 'clear') {
     if (!window.confirm(`Clear "${fileName || `file ${fileIndex}`}" on the NEO? This cannot be undone.`)) return;
-    if (!confirmLeaveKeyboardMode('Clearing a Neo file')) return;
+    if (!(await ensureManagerMode('Clearing a Neo file'))) return;
     try {
       await apiRequest(`/neo/applets/${appletId}/files/${fileIndex}`, { method: 'DELETE' });
       showNotice('Document cleared on the NEO.', 'success');
-      await refreshNeoFiles();
+      await refreshNeoFiles({ confirm: false });
     } catch (error) {
       showNotice(`Clear failed: ${error.message}`, 'error');
     }
     return;
   }
   if (action === 'write') {
-    if (!confirmLeaveKeyboardMode('Writing to a Neo file')) return;
+    if (!(await ensureManagerMode('Writing to a Neo file'))) return;
     activeWriteTarget = { appletId: Number(appletId), fileIndex: Number(fileIndex), fileName };
     document.querySelector('#write-document-title').textContent = fileName || `File ${fileIndex}`;
     document.querySelector('#write-document-meta').textContent = `Applet ${appletId} · file ${fileIndex}`;
@@ -1685,9 +3100,10 @@ async function invokeFileAction(action, appletId, fileIndex, fileName = '') {
     writeDocumentDialog.showModal();
     return;
   }
-  if ((action === 'read' || action === 'download') &&
-      !confirmLeaveKeyboardMode(action === 'read' ? 'Reading a Neo file' : 'Downloading a Neo file')) {
-    return;
+  if (action === 'read' || action === 'download') {
+    if (!(await ensureManagerMode(action === 'read' ? 'Reading a Neo file' : 'Downloading a Neo file'))) {
+      return;
+    }
   }
   const mapQuery = neoCharmapQuery('?');
   const path = `/neo/applets/${appletId}/files/${fileIndex}/${action}${action === 'download' || action === 'read' ? mapQuery : ''}`;
@@ -1802,10 +3218,110 @@ async function refreshLiveText() {
 
 document.querySelector('#refresh-files')?.addEventListener('click', refreshFiles);
 document.querySelector('#refresh-applets')?.addEventListener('click', () => refreshApplets({ confirm: true }));
+document.querySelector('#refresh-stock-applets')?.addEventListener('click', () => refreshStockApplets());
+document.querySelector('#install-from-store')?.addEventListener('click', (event) => {
+  event.preventDefault();
+  void openStockStoreDialog();
+});
+document.querySelector('#stock-store-close')?.addEventListener('click', () => {
+  hideStockStoreConfirm();
+  document.getElementById('stock-store-dialog')?.close();
+});
+document.querySelector('#stock-store-dialog')?.addEventListener('cancel', () => {
+  hideStockStoreConfirm();
+});
+document.querySelector('#stock-store-dialog')?.addEventListener('close', () => {
+  hideStockStoreConfirm();
+});
+document.querySelector('#stock-store-confirm-cancel')?.addEventListener('click', () => {
+  hideStockStoreConfirm();
+});
+document.querySelector('#stock-store-confirm-ok')?.addEventListener('click', () => {
+  const pending = stockStorePendingInstall;
+  if (!pending) return;
+  installStockApplet(pending.slug, pending.name);
+});
+document.querySelector('#flashdeck-close')?.addEventListener('click', () => {
+  document.getElementById('flashdeck-dialog')?.close();
+});
+document.querySelector('#flashdeck-dialog')?.addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) event.currentTarget.close();
+});
+document.querySelector('#stock-store-filters')?.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-store-filter]');
+  if (!btn) return;
+  stockStoreFilter = btn.dataset.storeFilter || 'all';
+  applyStockStoreFilter();
+});
+document.querySelector('#stock-store-search')?.addEventListener('input', (event) => {
+  stockStoreQuery = event.target.value || '';
+  applyStockStoreFilter();
+});
+document.querySelector('#stock-applet-list')?.addEventListener('click', (event) => {
+  const editBtn = event.target.closest('[data-stock-action="edit-decks"]');
+  if (editBtn) {
+    hideStockStoreConfirm();
+    document.getElementById('stock-store-dialog')?.close();
+    openFlashDeckBuilder();
+    return;
+  }
+  const btn = event.target.closest('[data-stock-action="install"]');
+  if (!btn || btn.disabled) return;
+  const row = btn.closest('.store-card');
+  const name = row?.querySelector('.store-card-title')?.textContent || btn.dataset.stockSlug;
+  promptStockStoreInstall(btn.dataset.stockSlug, name);
+});
+document.querySelector('#flashdeck-refresh')?.addEventListener('click', () => refreshFlashDecks());
+document.querySelector('#flashdeck-new')?.addEventListener('click', () => newFlashDeck());
+document.querySelector('#flashdeck-import')?.addEventListener('click', () => {
+  const input = document.querySelector('#flash-deck-file');
+  if (input) {
+    input.value = '';
+    input.click();
+  }
+});
+document.querySelector('#flash-deck-file')?.addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  importFlashDeckToLibrary(file);
+});
+document.querySelector('#flashdeck-save')?.addEventListener('click', () => saveFlashDeck());
+document.querySelector('#flashdeck-push')?.addEventListener('click', () => pushFlashDeck());
+document.querySelector('#flashdeck-delete')?.addEventListener('click', () => deleteFlashDeck());
+document.querySelector('#flashdeck-add-card')?.addEventListener('click', () => {
+  syncFlashDraftFromDom();
+  if (!flashDeckDraft) return;
+  if ((flashDeckDraft.cards?.length || 0) >= 16) {
+    showNotice('Maximum 16 cards per set.', 'warning');
+    return;
+  }
+  flashDeckDraft.cards = [...(flashDeckDraft.cards || []), { front: '', back: '' }];
+  renderFlashEditor();
+  const lastFront = document.querySelector('#flashdeck-cards .flashdeck-card-row:last-child [data-flash-side="front"]');
+  queueMicrotask(() => {
+    try { lastFront?.focus(); } catch (_) { /* ignore */ }
+  });
+});
+document.querySelector('#flashdeck-set-list')?.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-flash-id]');
+  if (!btn) return;
+  loadFlashDeck(btn.dataset.flashId);
+});
+document.querySelector('#flashdeck-cards')?.addEventListener('click', (event) => {
+  const remove = event.target.closest('[data-flash-remove-card]');
+  if (!remove) return;
+  syncFlashDraftFromDom();
+  if (!flashDeckDraft) return;
+  const row = remove.closest('.flashdeck-card-row');
+  const idx = Number(row?.dataset.cardIndex);
+  if (!Number.isFinite(idx)) return;
+  flashDeckDraft.cards.splice(idx, 1);
+  if (!flashDeckDraft.cards.length) flashDeckDraft.cards = [{ front: '', back: '' }];
+  renderFlashEditor();
+});
 document.querySelector('#refresh-neo-files')?.addEventListener('click', () => refreshNeoFiles({ confirm: true }));
 document.querySelector('#neo-read-all')?.addEventListener('click', backupAllNeoFiles);
 document.querySelector('#neo-backup-now')?.addEventListener('click', backupNowNeoFiles);
-document.querySelector('#neo-restart')?.addEventListener('click', restartNeo);
+document.querySelector('#neo-manager')?.addEventListener('click', enterManagerMode);
 document.querySelector('#remove-all-applets')?.addEventListener('click', removeAllApplets);
 document.querySelector('#install-applet')?.addEventListener('click', () => openAppletDialog('install'));
 document.querySelector('#applet-close')?.addEventListener('click', () => appletDialog.close());
@@ -1815,7 +3331,7 @@ document.querySelector('#applet-file')?.addEventListener('change', async (event)
   document.querySelector('#applet-file-name').textContent = file?.name || 'Choose a package file';
   const status = document.querySelector('#applet-dialog-status');
   if (!file || appletDialogOperation !== 'install' || !getAuthToken()) return;
-  status.textContent = 'Inspecting package header…';
+  setDialogStatus(status, 'Inspecting package header…', 'info');
   try {
     const response = await apiRequest('/neo/applets/inspect', {
       method: 'POST',
@@ -1823,9 +3339,13 @@ document.querySelector('#applet-file')?.addEventListener('change', async (event)
       headers: { 'Content-Type': 'application/octet-stream' }
     });
     const info = await response.json();
-    status.textContent = `${info.name} · ID ${info.applet_id} · ${formatBytes(info.rom_size)} ROM · ${info.file_count} file${info.file_count === 1 ? '' : 's'}`;
+    setDialogStatus(
+      status,
+      `${info.name} · ID ${info.applet_id} · ${formatBytes(info.rom_size)} ROM · ${info.file_count} file${info.file_count === 1 ? '' : 's'}`,
+      'success'
+    );
   } catch (error) {
-    status.textContent = error.message || 'Could not inspect the package.';
+    setDialogStatus(status, error.message || 'Could not inspect the package.', 'error');
   }
 });
 document.querySelector('#write-document-close')?.addEventListener('click', () => writeDocumentDialog.close());
@@ -1835,6 +3355,7 @@ writeDocumentForm?.addEventListener('submit', async (event) => {
   if (!activeWriteTarget) return;
   const status = document.querySelector('#write-document-status');
   const text = document.querySelector('#write-document-content').value;
+  if (!(await ensureManagerMode('Writing to a Neo file', { confirm: false }))) return;
   status.textContent = 'Writing to the NEO…';
   try {
     await apiRequest(
@@ -1843,7 +3364,7 @@ writeDocumentForm?.addEventListener('submit', async (event) => {
     );
     writeDocumentDialog.close();
     showNotice('Document written to the NEO.', 'success');
-    await refreshNeoFiles();
+    await refreshNeoFiles({ confirm: false });
   } catch (error) {
     status.textContent = error.message || 'Write failed.';
   }
@@ -1859,6 +3380,7 @@ document.querySelector('#document-download')?.addEventListener('click', () => {
 });
 document.querySelector('#document-save')?.addEventListener('click', async () => {
   if (!activeDocument) return;
+  if (!(await ensureManagerMode('Backing up a Neo file', { confirm: false }))) return;
   const button = document.querySelector('#document-save');
   setButtonBusy(button, true, 'Saving...');
   try {
@@ -1879,45 +3401,107 @@ document.querySelector('#neo-file-list')?.addEventListener('click', (event) => {
 document.querySelector('#applet-list')?.addEventListener('click', (event) => {
   const button = event.target.closest('[data-applet-action]');
   if (!button) return;
-  if (button.dataset.appletAction === 'remove') openAppletDialog('remove', { id: button.dataset.appletId, name: button.dataset.appletName });
-  if (button.dataset.appletAction === 'download') invokeAppletDownload(button.dataset.appletId, button.dataset.appletName);
+  const rawName = button.dataset.appletName ? decodeURIComponent(button.dataset.appletName) : '';
+  if (button.dataset.appletAction === 'flashdeck-settings') {
+    openFlashDeckBuilder();
+    return;
+  }
+  if (button.dataset.appletAction === 'remove') openAppletDialog('remove', { id: button.dataset.appletId, name: rawName });
+  if (button.dataset.appletAction === 'download') invokeAppletDownload(button.dataset.appletId, rawName);
 });
 appletForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const leaveLabel = appletDialogOperation === 'install' ? 'Installing a SmartApplet' : 'Removing a SmartApplet';
-  if (!confirmLeaveKeyboardMode(leaveLabel)) return;
+  if (!(await ensureManagerMode(leaveLabel))) return;
   const status = document.querySelector('#applet-dialog-status');
   const submitButton = document.querySelector('#applet-submit');
-  status.textContent = 'Contacting the NEO...';
+  setDialogStatus(
+    status,
+    appletDialogOperation === 'install'
+      ? 'Uploading and installing on the NEO… this can take a minute.'
+      : 'Contacting the NEO...',
+    'info'
+  );
   setButtonBusy(submitButton, true, appletDialogOperation === 'install' ? 'Installing...' : 'Removing...');
   try {
     if (appletDialogOperation === 'install') {
       const file = document.querySelector('#applet-file').files[0];
       if (!file) throw new Error('Choose a SmartApplet package first.');
-      await apiRequest('/neo/applets', { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream', 'X-Neo-Replace': String(document.querySelector('#applet-replace').checked) } });
+      if (file.size > 1024 * 1024) {
+        throw new Error('The package is too large to upload (maximum 1 MB).');
+      }
+      const replace = !!document.querySelector('#applet-replace')?.checked;
+      await apiRequest('/neo/applets', {
+        method: 'POST',
+        body: file,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Neo-Replace': replace ? 'true' : 'false',
+        },
+      });
+      appletDialog.close();
+      showNotice('SmartApplet installed.', 'success');
+      await refreshApplets({ confirm: false });
+      /* Install + list leave Neo in manager mode; return to keyboard like download. */
+      try {
+        await apiRequest('/neo/restart', { method: 'POST' });
+        showNotice('SmartApplet installed. Neo returned to keyboard mode.', 'success');
+      } catch (_) {
+        showNotice('SmartApplet installed. Use Keyboard mode on Typing & Bluetooth if typing does not resume.', 'info');
+      }
+      await refreshStatus();
+      return;
     } else {
       await apiRequest(`/neo/applets/${appletDialog.dataset.appletId}`, { method: 'DELETE' });
+      appletDialog.close();
+      showNotice('SmartApplet removed.', 'success');
     }
-    appletDialog.close();
-    refreshApplets();
+    await refreshApplets({ confirm: false });
+    await refreshStatus();
   } catch (error) {
-    status.textContent = error.message || 'The operation could not be completed.';
+    const raw = error?.message || 'The operation could not be completed.';
+    const already =
+      /already installed/i.test(raw) ||
+      /already_installed/i.test(raw) ||
+      raw.trim() === '{"error":"already_installed"}';
+    if (already && appletDialogOperation === 'install') {
+      const replace = document.querySelector('#applet-replace');
+      if (replace) replace.checked = true;
+      setDialogStatus(
+        status,
+        'That applet is already on the Neo. “Replace” is now checked — tap Install again to overwrite it.',
+        'error'
+      );
+    } else {
+      setDialogStatus(status, raw, 'error');
+    }
   } finally {
     setButtonBusy(submitButton, false);
   }
 });
 
 async function invokeAppletDownload(appletId, appletName) {
-  if (!confirmLeaveKeyboardMode('Downloading a SmartApplet')) return;
+  if (!(await ensureManagerMode('Downloading a SmartApplet'))) return;
   try {
     const response = await apiRequest(`/neo/applets/${appletId}/download`);
     const blob = await response.blob();
+    let filename = `${(appletName || `applet-${appletId}`).replace(/[\\/:*?"<>|]+/g, '_').trim() || `applet-${appletId}`}.os3kapp`;
+    if (Number(appletId) === 0) {
+      filename = 'SystemRom.os3kos';
+    }
+    const cd = response.headers.get('Content-Disposition') || '';
+    const m = /filename=\"([^\"]+)\"/i.exec(cd);
+    if (m && m[1]) {
+      filename = m[1];
+    }
     const downloadUrl = URL.createObjectURL(blob);
-    const link = Object.assign(document.createElement('a'), { href: downloadUrl, download: `${appletName || `applet-${appletId}`}.os3kapp` });
+    const link = Object.assign(document.createElement('a'), { href: downloadUrl, download: filename });
     link.click();
     URL.revokeObjectURL(downloadUrl);
+    showNotice(`Downloaded ${filename} (${formatBytes(blob.size)}). Neo returned to keyboard mode.`, 'success');
+    await refreshStatus();
   } catch (error) {
-    document.querySelector('#applet-count-detail').textContent = `Applet download unavailable: ${error.message || 'USB transport is not ready.'}`;
+    showNotice(`Applet download unavailable: ${error.message || 'USB transport is not ready.'}`, 'error');
   }
 }
 
@@ -1927,13 +3511,13 @@ async function backupAllNeoFiles() {
     showNotice('A backup is already running.', 'error');
     return;
   }
-  if (!confirmLeaveKeyboardMode('Backup all')) return;
+  if (!(await ensureManagerMode('Backup all'))) return;
   setButtonBusy(button, true, 'Backing up…');
   try {
     const response = await apiRequest(`/neo/applets/${NEO_ALPHAWORD_ID}/files/read-all${neoCharmapQuery('?')}`, { method: 'POST' });
     const result = await response.json();
-    const kb = result.returned_to_keyboard ? ' Neo returned to keyboard mode.' : ' Could not return Neo to keyboard — use Keyboard mode.';
-    showNotice(`Backed up ${result.count || 0} AlphaWord document${result.count === 1 ? '' : 's'} locally.${kb}`, result.returned_to_keyboard ? 'success' : 'error');
+    const kb = result.returned_to_keyboard ? ' Neo returned to keyboard mode.' : ' Could not return Neo to keyboard — use Keyboard mode on Typing & Bluetooth.';
+    showNotice(`Force-backed up ${result.count || 0} AlphaWord document${result.count === 1 ? '' : 's'} (every non-empty slot).${kb}`, result.returned_to_keyboard ? 'success' : 'error');
     await refreshFiles();
     await refreshStatus();
   } catch (error) {
@@ -1949,16 +3533,27 @@ async function backupNowNeoFiles() {
     showNotice('A backup is already running.', 'error');
     return;
   }
-  if (!confirmLeaveKeyboardMode('Backup now')) return;
+  if (!(await ensureManagerMode('Backup now'))) return;
   setButtonBusy(button, true, 'Starting…');
   try {
     await apiRequest('/neo/autobackup', { method: 'POST' });
-    showNotice('Backup started — changed AlphaWord files only, then keyboard mode.', 'success');
+    showNotice('Backup started — only files that changed since today’s save, then keyboard mode.', 'success');
     sAwaitingBackupFinish = true;
     setBackupBusyUi(true);
     await refreshStatus();
   } catch (error) {
     showNotice(`Backup now failed: ${error.message}`, 'error');
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+async function enterManagerMode() {
+  const button = document.querySelector('#neo-manager');
+  setButtonBusy(button, true, 'Switching…');
+  try {
+    if (!(await ensureManagerMode('Manager mode'))) return;
+    showNotice('Neo is in manager mode.', 'success');
   } finally {
     setButtonBusy(button, false);
   }
@@ -1984,15 +3579,15 @@ async function restartNeo() {
 }
 
 async function removeAllApplets() {
-  if (!confirmLeaveKeyboardMode('Removing all SmartApplets')) return;
+  if (!(await ensureManagerMode('Removing all SmartApplets'))) return;
   if (!window.confirm('Remove ALL SmartApplets from the NEO? The device will reboot and this cannot be undone.')) return;
   const button = document.querySelector('#remove-all-applets');
   setButtonBusy(button, true, 'Removing…');
   try {
     await apiRequest('/neo/applets', { method: 'DELETE' });
     showNotice('All SmartApplets removed from the NEO.', 'success');
-    await refreshApplets();
-    await refreshNeoFiles();
+    await refreshApplets({ confirm: false });
+    await refreshNeoFiles({ confirm: false });
   } catch (error) {
     showNotice(`Remove all failed: ${error.message}`, 'error');
   } finally {
@@ -2098,6 +3693,8 @@ async function fetchWifiScan() {
   const sel = document.querySelector('#wifi-ssid');
   if (!sel) return;
   const saved = sel.dataset.savedSsid || sel.value || '';
+  const savedSet = new Set(savedWifiNetworks.map((n) => n.ssid).filter(Boolean));
+  if (saved) savedSet.add(saved);
   sel.innerHTML = '<option value="">(scanning...)</option>';
   try {
     const res = await authFetch('/wifi/scan');
@@ -2105,9 +3702,9 @@ async function fetchWifiScan() {
     const arr = await res.json();
     const options = ['<option value="">(select a network)</option>'];
     const seen = new Set();
-    if (saved) {
-      options.push(`<option value="${escapeHtml(saved)}">${escapeHtml(saved)} (saved)</option>`);
-      seen.add(saved);
+    for (const ssid of savedSet) {
+      options.push(`<option value="${escapeHtml(ssid)}">${escapeHtml(ssid)} (saved)</option>`);
+      seen.add(ssid);
     }
     for (const ap of arr) {
       const ssid = ap.ssid || '';
@@ -2118,14 +3715,47 @@ async function fetchWifiScan() {
     sel.innerHTML = options.join('');
     if (saved) sel.value = saved;
   } catch (e) {
-    sel.innerHTML = saved
-      ? `<option value="">(scan failed)</option><option value="${escapeHtml(saved)}">${escapeHtml(saved)} (saved)</option>`
-      : '<option value="">(scan failed)</option>';
+    const opts = ['<option value="">(scan failed)</option>'];
+    for (const ssid of savedSet) {
+      opts.push(`<option value="${escapeHtml(ssid)}">${escapeHtml(ssid)} (saved)</option>`);
+    }
+    sel.innerHTML = opts.join('');
     if (saved) sel.value = saved;
   }
 }
 
 document.querySelector('#wifi-scan-btn')?.addEventListener('click', () => fetchWifiScan());
+document.querySelector('#wifi-add-btn')?.addEventListener('click', () => {
+  const ssidSelect = document.querySelector('#wifi-ssid');
+  const ssid = ssidSelect?.value.trim() || '';
+  const password = document.querySelector('#wifi-password')?.value || '';
+  if (!ssid) {
+    showNotice('Scan and select a network to save.', 'error');
+    return;
+  }
+  const existing = savedWifiNetworks.find((n) => n.ssid === ssid);
+  if (!password && !(existing && existing.password_set)) {
+    showNotice('Enter the Wi‑Fi password for this network.', 'error');
+    return;
+  }
+  if (upsertSavedWifi(ssid, password)) {
+    const wp = document.querySelector('#wifi-password');
+    if (wp) wp.value = '';
+    showNotice(`Saved “${ssid}”. Click Save preferences to apply.`, 'success');
+  }
+});
+document.getElementById('wifi-saved-list')?.addEventListener('click', (event) => {
+  const t = event.target;
+  if (!(t instanceof HTMLElement)) return;
+  const ssid = t.dataset.ssid;
+  if (!ssid) return;
+  if (t.classList.contains('wifi-saved-remove')) {
+    removeSavedWifi(ssid);
+    showNotice(`Removed “${ssid}” from the list (save to apply).`, 'success');
+  } else if (t.classList.contains('wifi-saved-prefer')) {
+    setPreferredWifi(ssid);
+  }
+});
 
 document.querySelector('#sync-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -2138,18 +3768,26 @@ document.querySelector('#sync-form')?.addEventListener('submit', async (event) =
   }
 });
 
-setInterval(() => {
-  if (!document.hidden) refreshStatus();
-}, 12000);
-if (IS_TYPING_PAGE) {
-  setInterval(() => {
-    if (!document.hidden) refreshLiveText();
-  }, 1000);
+function scheduleStatusPoll(delayMs) {
+  if (statusPollTimer) clearTimeout(statusPollTimer);
+  statusPollTimer = setTimeout(async () => {
+    statusPollTimer = null;
+    if (!document.hidden && getAuthToken()) {
+      await refreshStatus();
+    }
+    const next = statusUnchangedStreak >= 2 ? STATUS_IDLE_MS : STATUS_ACTIVE_MS;
+    scheduleStatusPoll(next);
+  }, delayMs);
+}
+
+if (IS_DASHBOARD) {
+  scheduleStatusPoll(STATUS_ACTIVE_MS);
 }
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
+  if (!document.hidden && IS_DASHBOARD) {
+    statusUnchangedStreak = 0;
     refreshStatus();
-    if (IS_TYPING_PAGE) refreshLiveText();
+    scheduleStatusPoll(STATUS_ACTIVE_MS);
   }
 });
 
@@ -2297,15 +3935,59 @@ function escapeHtml(value) {
   return value.replace(/[&<>'"]/g, (character) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[character]);
 }
 
-refreshStatus();
-if (IS_DASHBOARD) {
-  refreshFiles();
-  if (window.NEO2_PORTAL_DEMO) {
-    refreshApplets();
-    refreshNeoFiles();
-  }
-}
-if (IS_TYPING_PAGE) refreshLiveText();
+purgeExpiredLocalToken();
 updateSignInState();
-loadCloudSyncConfig();
 initHeaderFooter();
+
+async function bootstrapAuthedUi() {
+  await clearSessionIfOnboarding();
+  if (!getAuthToken()) {
+    updateSignInState();
+    return;
+  }
+  const ok = await validateSession();
+  updateSignInState();
+  if (ok !== true) {
+    /* false → cleared; null → device unreachable — stay on Sign In until proven */
+    return;
+  }
+  await refreshStatus();
+  if (IS_DASHBOARD) {
+    refreshFiles();
+    if (window.NEO2_PORTAL_DEMO) {
+      refreshApplets();
+      refreshNeoFiles();
+    }
+  }
+  if (IS_TYPING_PAGE) refreshLiveText();
+  if (!IS_NEO_LINK_PAGE) loadCloudSyncConfig();
+}
+
+if (getAuthToken()) {
+  bootstrapAuthedUi();
+} else {
+  clearSessionIfOnboarding().then(() => updateSignInState());
+}
+
+/* Keep the server session alive and demote the UI if the token dies. */
+setInterval(() => {
+  if (document.hidden || !getAuthToken()) return;
+  const expAt = Number(localStorage.getItem('neo2_token_exp_at') || 0);
+  const soon = !expAt || Date.now() > expAt - 120000;
+  if (soon || !sessionVerified) {
+    validateSession().then((ok) => {
+      updateSignInState();
+      if (ok === true) refreshStatus().catch(() => {});
+    });
+  } else {
+    refreshStatus().catch(() => {});
+  }
+}, 60000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && getAuthToken()) {
+    validateSession().then((ok) => {
+      updateSignInState();
+      if (ok === true) refreshStatus().catch(() => {});
+    });
+  }
+});
