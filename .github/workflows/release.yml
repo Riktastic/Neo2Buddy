@@ -94,7 +94,8 @@ jobs:
           echo "Neo2 Buddy Setup $V (Windows)" > "$DIST/README.txt"
           echo "Unzip, then run Neo2BuddySetup.exe. No extra software to install." >> "$DIST/README.txt"
           mkdir -p "releases/$V"
-          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/Setup-windows-$V.zip" Neo2BuddySetup)
+          # windows-latest Git Bash has no `zip`; Python is already on the runner.
+          python -c "import shutil; shutil.make_archive(r'releases/$V/Setup-windows-$V', 'zip', r'flasher/_native_stage/dist', 'Neo2BuddySetup')"
 
       - name: Package macOS zip
         if: matrix.artifact == 'macos'
