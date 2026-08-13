@@ -104,6 +104,6 @@ Safety notes:
 
 The Neo 2 connects to the ESP32-S3 **OTG1** port (native USB on GPIO19/20). **USB-B
 must have 5 V** for emulation/USB — internal AAs run normal writing only. See
-[docs/neo2-usb-wiring.md](../../docs/neo2-usb-wiring.md) for the split power/data
+[docs/cable.md](../../docs/cable.md) for the split power/data
 cable: 5 V on USB-B from a power bank, data via OTG1, live switch to emulation mode
 when the buddy is connected (no Neo reboot required).

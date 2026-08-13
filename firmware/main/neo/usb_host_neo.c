@@ -6,7 +6,7 @@
  * (PID 0xBD01), then exposes bulk read/write used by the neo_* protocol stack.
  *
  * Hard-won rules (do not "simplify" without re-testing on hardware):
- *   1. Neo USB-B needs VBUS 5 V — AAs alone never enumerate (see docs/neo2-usb-wiring.md).
+ *   1. Neo USB-B needs VBUS 5 V — AAs alone never enumerate (see docs/cable.md).
  *   2. Never drop NEW_DEV while busy; queue pending_addr (early firmware lost the Neo here).
  *   3. Separate bulk IN and OUT usb_transfer_t objects; never drain the other direction.
  *   4. Flip only on the USB client task (NEO_USB_ACTION_FLIP) — other tasks request it.
@@ -1795,7 +1795,7 @@ esp_err_t usb_host_neo_init(void)
     ESP_LOGW(TAG, "=== Neo2 USB: use OTG1 port on the Olimex board ===");
     ESP_LOGW(TAG, "Neo2 USB-B needs 5V for emulation (powerbank OK; internal AAs not enough alone)");
     ESP_LOGW(TAG, "Data: USB-C into OTG1. Serial monitor uses the other USB-C port.");
-    ESP_LOGW(TAG, "Split power/data wiring: docs/neo2-usb-wiring.md");
+    ESP_LOGW(TAG, "Split power/data wiring: docs/cable.md");
     neo_debug_event("USB host ready on OTG1");
     return ESP_OK;
 }

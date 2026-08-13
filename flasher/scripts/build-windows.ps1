@@ -62,7 +62,7 @@ try {
 
     $outDir = Join-Path $repo "releases\$Version"
     New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-    $zipPath = Join-Path $outDir "neo2buddy-setup-windows-$Version.zip"
+    $zipPath = Join-Path $outDir "Setup-windows-$Version.zip"
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 
     @(

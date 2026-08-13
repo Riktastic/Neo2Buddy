@@ -1,4 +1,6 @@
-# Cloud Sync
+# Cloud Sync (API)
+
+How to use this from the portal: [docs/using.md](../../docs/using.md#cloud-copies-optional).
 
 Device-side upload of local Neo backups to **WebDAV** (Nextcloud, ownCloud, NAS),
 **S3-compatible** storage (AWS S3, Cloudflare R2, Backblaze B2, MinIO), or

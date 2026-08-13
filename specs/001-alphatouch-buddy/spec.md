@@ -60,7 +60,7 @@ As an owner, I list, view, download, upload, and delete UTF‑8 backups on SD or
 
 ### US5 — Local web dashboard (P1) ✅
 
-As an owner, I open the device IP or `http://<device-name>.local` and use status, Neo documents, live keyboard, BLE, Wi‑Fi, cloud sync, and settings offline.
+As an owner, I open the device IP (OLED or serial log; SoftAP is `http://192.168.4.1`) and use status, Neo documents, live keyboard, BLE, Wi‑Fi, cloud sync, and settings offline.
 
 ### US6 — Battery and power (P2) ✅ (hardware-dependent)
 
@@ -71,7 +71,7 @@ Battery percent/charging from configured ADC; low-battery warning on OLED/portal
 As a Neo owner, I connect the Neo by USB, backup/read/write documents, watch live typing in keyboard mode, and return to keyboard mode after backups.
 
 **Acceptance**
-1. Neo USB‑B needs **5 V** for USB enumeration (AAs alone are insufficient). See `docs/neo2-usb-wiring.md`.
+1. Neo USB‑B needs **5 V** for USB enumeration (AAs alone are insufficient). See `docs/cable.md`.
 2. Keyboard mode: HID listener feeds live portal + UART logs.
 3. Manager ops (`ensure_comms`): scan / read / write / backup / applets flip to comms and **interrupt keyboard emulation**.
 4. **Backup now / Backup all** return Neo to keyboard mode when finished.
@@ -100,7 +100,7 @@ WebDAV or S3-compatible upload of local backups; local copies never deleted by c
 
 - FR-001: LittleFS for portal assets + internal backups; NVS for settings/secrets; optional FAT SD mount (never auto-format).
 - FR-002: REST API for status, files, Neo ops, Wi‑Fi/BLE, cloud sync, auth, factory reset.
-- FR-003: Setup hotspot when unconfigured or recovery; mDNS hostname from device name on AP/STA.
+- FR-003: Setup hotspot when unconfigured or recovery; portal via IP (OLED / serial). mDNS / `.local` is not used.
 - FR-004: Optional 128×64 OLED status; responsive web UI (no LVGL/touch UI in shipping product).
 - FR-005: BLE HID keyboard with **Neo key passthrough** while connected; bonds persist across reboot; portal text send remains optional.
 - FR-006: Static portal from LittleFS; user guide at `/user-guide.html`.
@@ -135,7 +135,7 @@ WebDAV or S3-compatible upload of local backups; local copies never deleted by c
 
 ## Pinout and wiring
 
-Constants: `firmware/main/include/board_config.h`. Neo USB: `docs/neo2-usb-wiring.md`.
+Constants: `firmware/main/include/board_config.h`. Neo USB: `docs/cable.md`.
 
 - OLED I2C: SDA GPIO48, SCL GPIO47, 3.3 V only.
 - microSD SPI: CS15, MOSI16, MISO17, CLK18, 3.3 V via level shifter.

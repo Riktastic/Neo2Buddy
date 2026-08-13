@@ -1,12 +1,10 @@
 # Publish GitHub Release assets:
-# - neo2buddy-setup-*.zip (Python source + images)
-# - neo2buddy-firmware-*.zip (raw bins)
-# - neo2buddy-setup-windows-*.zip (Neo2BuddySetup.exe folder)
-# - neo2buddy-setup-macos-*.zip (.app)
-# - neo2buddy-setup-linux-*.zip (binary folder)
+# - Setup-windows-<ver>.zip  (Neo2BuddySetup.exe — no Python)
+# - Setup-macos-<ver>.zip    (Neo2BuddySetup.app)
+# - Setup-linux-<ver>.zip    (Neo2BuddySetup binary)
+# GitHub also attaches Source code (zip / tar.gz) for the tag.
 #
-# Prefers pre-built zips under releases/<version>/ when present; otherwise
-# builds native apps from firmware images in that folder (firmware must exist).
+# Builds native Setup apps from firmware images in releases/<version>/.
 
 name: GitHub Release
 
@@ -94,9 +92,9 @@ jobs:
           V="${{ needs.resolve.outputs.version }}"
           DIST="flasher/_native_stage/dist/Neo2BuddySetup"
           echo "Neo2 Buddy Setup $V (Windows)" > "$DIST/README.txt"
-          echo "Run Neo2BuddySetup.exe — no Python install needed." >> "$DIST/README.txt"
+          echo "Unzip, then run Neo2BuddySetup.exe. No extra software to install." >> "$DIST/README.txt"
           mkdir -p "releases/$V"
-          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/neo2buddy-setup-windows-$V.zip" Neo2BuddySetup)
+          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/Setup-windows-$V.zip" Neo2BuddySetup)
 
       - name: Package macOS zip
         if: matrix.artifact == 'macos'
@@ -106,7 +104,7 @@ jobs:
           APP="flasher/_native_stage/dist/Neo2BuddySetup.app"
           test -d "$APP"
           mkdir -p "releases/$V"
-          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/neo2buddy-setup-macos-$V.zip" Neo2BuddySetup.app)
+          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/Setup-macos-$V.zip" Neo2BuddySetup.app)
 
       - name: Package Linux zip
         if: matrix.artifact == 'linux'
@@ -115,14 +113,14 @@ jobs:
           V="${{ needs.resolve.outputs.version }}"
           DIST="flasher/_native_stage/dist/Neo2BuddySetup"
           echo "Neo2 Buddy Setup $V (Linux)" > "$DIST/README.txt"
-          echo "Run ./Neo2BuddySetup — may need: sudo apt install python3-tk (build host only)." >> "$DIST/README.txt"
+          echo "Unzip, then run ./Neo2BuddySetup. No extra software to install." >> "$DIST/README.txt"
           mkdir -p "releases/$V"
-          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/neo2buddy-setup-linux-$V.zip" Neo2BuddySetup)
+          (cd "flasher/_native_stage/dist" && zip -r "$GITHUB_WORKSPACE/releases/$V/Setup-linux-$V.zip" Neo2BuddySetup)
 
       - uses: actions/upload-artifact@v4
         with:
           name: setup-${{ matrix.artifact }}
-          path: releases/${{ needs.resolve.outputs.version }}/neo2buddy-setup-${{ matrix.artifact }}-*.zip
+          path: releases/${{ needs.resolve.outputs.version }}/Setup-${{ matrix.artifact }}-*.zip
 
   release:
     needs: [resolve, native]
@@ -142,22 +140,18 @@ jobs:
           V="${{ needs.resolve.outputs.version }}"
           DIR="releases/$V"
           mkdir -p "$DIR"
-          find _native_out -name 'neo2buddy-setup-*.zip' -exec cp {} "$DIR/" \;
-
-          SETUP="$DIR/neo2buddy-setup-$V.zip"
-          FW="$DIR/neo2buddy-firmware-$V.zip"
-          if [ ! -f "$SETUP" ] || [ ! -f "$FW" ]; then
-            echo "::error::Missing Python setup/firmware zips in $DIR (run package-release.ps1 and commit them)."
-            ls -la "$DIR" || true
+          find _native_out -name 'Setup-*.zip' -exec cp {} "$DIR/" \;
+          ls -la "$DIR"
+          COUNT=$(find "$DIR" -maxdepth 1 -name 'Setup-*.zip' | wc -l)
+          if [ "$COUNT" -lt 1 ]; then
+            echo "::error::No Setup-*.zip artifacts found."
             exit 1
           fi
-
           {
             echo "files<<EOF"
-            ls -1 "$DIR"/neo2buddy-setup-*.zip "$DIR"/neo2buddy-firmware-*.zip
+            ls -1 "$DIR"/Setup-*.zip
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-          ls -la "$DIR"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -168,24 +162,17 @@ jobs:
           body: |
             ## Install firmware
 
-            ### Native apps (no Python)
+            Download **Setup** for your computer. Unzip and run it — **no Python, no ESP-IDF.** The app shows how to put the ESP32 in download mode and installs the firmware.
 
-            | Platform | Download |
-            |----------|----------|
-            | Windows | `neo2buddy-setup-windows-${{ needs.resolve.outputs.version }}.zip` → run `Neo2BuddySetup.exe` |
-            | macOS | `neo2buddy-setup-macos-${{ needs.resolve.outputs.version }}.zip` → open `Neo2BuddySetup.app` |
-            | Linux | `neo2buddy-setup-linux-${{ needs.resolve.outputs.version }}.zip` → run `Neo2BuddySetup` |
+            | Download | What to run |
+            |----------|-------------|
+            | `Setup-windows-${{ needs.resolve.outputs.version }}.zip` | `Neo2BuddySetup.exe` |
+            | `Setup-macos-${{ needs.resolve.outputs.version }}.zip` | `Neo2BuddySetup.app` (right-click → Open the first time) |
+            | `Setup-linux-${{ needs.resolve.outputs.version }}.zip` | `./Neo2BuddySetup` |
 
-            ### Python (all platforms)
+            GitHub also attaches **Source code** (zip / tar.gz) for this tag.
 
-            `neo2buddy-setup-${{ needs.resolve.outputs.version }}.zip` — unzip and run `Run Setup.bat` / `./run-setup.sh` (needs Python 3.10+).
+            After install: join the Buddy Wi‑Fi hotspot and open http://192.168.4.1/
 
-            ### Firmware bins only
-
-            `neo2buddy-firmware-${{ needs.resolve.outputs.version }}.zip` for esptool / advanced flashing.
-
-            ## Docs
-
-            - Portal demo: https://riktastic.github.io/Neo2Buddy/
-            - Project: https://github.com/Riktastic/Neo2Buddy
+            Docs: https://github.com/Riktastic/Neo2Buddy · Demo: https://riktastic.github.io/Neo2Buddy/
           files: ${{ steps.assets.outputs.files }}

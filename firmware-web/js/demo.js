@@ -21,22 +21,35 @@
   window.NEO2_PORTAL_DEMO = true;
 
   const DEMO_APPLETS = [
-    { id: 40960, name: 'AlphaWord', file_count: 8, rom_size: 24576 },
-    { id: 40961, name: 'Calculator', file_count: 1, rom_size: 8192 },
-    { id: 40962, name: 'French', file_count: 1, rom_size: 12288 },
-    { id: 40963, name: 'Spanish', file_count: 1, rom_size: 12288 },
+    { id: 0xa000, name: 'AlphaWord Plus', file_count: 8, rom_size: 24576, ram_size: 8192 },
+    { id: 0xa001, name: 'Calculator', file_count: 0, rom_size: 8192, ram_size: 2048 },
+    { id: 0xa002, name: 'SpellCheck', file_count: 1, rom_size: 98304, ram_size: 4096 },
+    { id: 0xa003, name: 'Thesaurus', file_count: 1, rom_size: 65536, ram_size: 4096 },
+    { id: 0xa004, name: 'KAZ Typing Tutor', file_count: 1, rom_size: 18432, ram_size: 2048 },
+    { id: 0xa005, name: 'Control Panel', file_count: 0, rom_size: 12288, ram_size: 2048 },
+    { id: 0xa1b6, name: 'Flash Cards', file_count: 1, rom_size: 5056, ram_size: 2048 },
   ];
 
   const DEMO_NEO_FILES = [
-    { name: 'Chapter one', applet_id: 40960, applet_name: 'AlphaWord', file_index: 1, size: 1842, alloc_size: 2033, used_size: 1842 },
-    { name: 'Morning pages', applet_id: 40960, applet_name: 'AlphaWord', file_index: 2, size: 956, alloc_size: 1867, used_size: 956 },
-    { name: 'Notes', applet_id: 40960, applet_name: 'AlphaWord', file_index: 3, size: 412, alloc_size: 512, used_size: 412 },
-    { name: 'Ideas', applet_id: 40960, applet_name: 'AlphaWord', file_index: 4, size: 0, alloc_size: 512, used_size: 0 },
+    { name: 'Chapter one', applet_id: 0xa000, applet_name: 'AlphaWord Plus', file_index: 1, size: 1842, alloc_size: 2048, used_size: 1842 },
+    { name: 'Morning pages', applet_id: 0xa000, applet_name: 'AlphaWord Plus', file_index: 2, size: 1256, alloc_size: 2048, used_size: 1256 },
+    { name: 'School notes', applet_id: 0xa000, applet_name: 'AlphaWord Plus', file_index: 3, size: 892, alloc_size: 1024, used_size: 892 },
+    { name: 'Ideas', applet_id: 0xa000, applet_name: 'AlphaWord Plus', file_index: 4, size: 318, alloc_size: 512, used_size: 318 },
+    { name: 'Briefing', applet_id: 0xa000, applet_name: 'AlphaWord Plus', file_index: 5, size: 674, alloc_size: 1024, used_size: 674 },
+    { name: 'Boodschappen', applet_id: 0xa000, applet_name: 'AlphaWord Plus', file_index: 6, size: 241, alloc_size: 512, used_size: 241 },
+    { name: 'File 7', applet_id: 0xa000, applet_name: 'AlphaWord Plus', file_index: 7, size: 0, alloc_size: 512, used_size: 0 },
+    { name: 'File 8', applet_id: 0xa000, applet_name: 'AlphaWord Plus', file_index: 8, size: 0, alloc_size: 512, used_size: 0 },
   ];
 
+  const nowSec = Math.floor(Date.now() / 1000);
   const DEMO_BACKUPS = [
-    { name: 'RiksNeo_s01_Chapter_one_20260808.txt', size: 1842, modified: Math.floor(Date.now() / 1000) - 3600 },
-    { name: 'RiksNeo_s02_Morning_pages_20260807.txt', size: 956, modified: Math.floor(Date.now() / 1000) - 86400 },
+    { name: 'RiksNeo_s01_Chapter_one_20260812.txt', size: 1842, modified: nowSec - 3600 },
+    { name: 'RiksNeo_s02_Morning_pages_20260812.txt', size: 1256, modified: nowSec - 7200 },
+    { name: 'RiksNeo_s03_School_notes_20260811.txt', size: 892, modified: nowSec - 86400 },
+    { name: 'RiksNeo_s04_Ideas_20260811.txt', size: 318, modified: nowSec - 90000 },
+    { name: 'RiksNeo_s05_Briefing_20260810.txt', size: 674, modified: nowSec - 172800 },
+    { name: 'RiksNeo_s06_Boodschappen_20260810.txt', size: 241, modified: nowSec - 176400 },
+    { name: 'RiksNeo_s01_Chapter_one_20260808.txt', size: 1710, modified: nowSec - 4 * 86400 },
   ];
 
   const DEMO_SAMPLE_DOC =
@@ -44,6 +57,31 @@
     'Winston Smith, his chin nuzzled into his breast in an effort to escape the vile wind, ' +
     'slipped quickly through the glass doors of Victory Mansions, though not quickly enough ' +
     'to prevent a swirl of gritty dust from entering along with him.';
+
+  const DEMO_FILE_TEXT = {
+    1: DEMO_SAMPLE_DOC,
+    2:
+      'Morning pages — 12 August\n\n' +
+      'Write first, edit later. The Neo is good at that.\n\n' +
+      'Three things for today: finish chapter one, pack the cable, send a copy to the laptop.',
+    3:
+      'Geschiedenis — les 4\n\n' +
+      '- Industriële revolutie: stoom, spoor, steden\n' +
+      '- Huiswerk: blz. 48–51, vragen 1 t/m 6\n' +
+      '- Toets vrijdag: begrippenlijst leren',
+    4:
+      'Ideas\n\n' +
+      '- Quiet writing desk, no tabs\n' +
+      '- Backup when I plug in, not when I remember\n' +
+      '- Bluetooth into Docs on the kitchen laptop',
+    5:
+      'Friday briefing\n\n' +
+      'Keep the Neo for drafting. Buddy for backups and a phone preview.\n' +
+      'If the cable is packed, the machine stays a typewriter.',
+    6:
+      'Boodschappen\n\n' +
+      'brood, melk, koffie, kaas, appels, batterijen AA (3x), usb-kabel',
+  };
 
   const demoFlashDecks = {
     'en-nl-basic': {
@@ -67,6 +105,19 @@
         { front: 'today', back: 'vandaag' },
       ],
     },
+    'nl-irregular': {
+      name: 'Dutch irregular verbs',
+      cards: [
+        { front: 'to be', back: 'zijn / was / geweest' },
+        { front: 'to have', back: 'hebben / had / gehad' },
+        { front: 'to go', back: 'gaan / ging / gegaan' },
+        { front: 'to come', back: 'komen / kwam / gekomen' },
+        { front: 'to see', back: 'zien / zag / gezien' },
+        { front: 'to do', back: 'doen / deed / gedaan' },
+        { front: 'to think', back: 'denken / dacht / gedacht' },
+        { front: 'to bring', back: 'brengen / bracht / gebracht' },
+      ],
+    },
   };
 
   function demoNeoFileText(fileIndex) {
@@ -74,14 +125,13 @@
     if (!file || !(file.used_size || file.size)) {
       return '';
     }
-    if (fileIndex === 1) {
-      return DEMO_SAMPLE_DOC;
-    }
-    return (
-      `${file.name}\n\n` +
-      'Sample Neo document for the portal showcase.\n\n' +
-      'On a real buddy, this would be UTF-8 text read from the AlphaWord file on your Neo2.'
-    );
+    return DEMO_FILE_TEXT[fileIndex] || `${file.name}\n\nSample Neo document for the portal showcase.`;
+  }
+
+  function demoBackupText(name) {
+    const match = String(name || '').match(/_s0?(\d+)_/);
+    const idx = match ? parseInt(match[1], 10) : 1;
+    return demoNeoFileText(idx) || DEMO_SAMPLE_DOC;
   }
 
   function demoNeoBackupPath(fileIndex) {
@@ -98,6 +148,25 @@
   let demoLiveSeq = 0;
   let demoLiveTick = 0;
   let demoAutoBackupOnConnect = true;
+  let demoManagerMode = false;
+
+  function demoUsbStatus() {
+    return {
+      usb_connected: true,
+      usb_keyboard_active: !demoManagerMode,
+      usb_neo_ready: demoManagerMode,
+      product: 'AlphaSmart Neo2',
+      usb_bus_devices: 1,
+      usb_host_active: true,
+      usb_flipping: false,
+      ip: '192.168.8.244',
+      ble_state: 'idle',
+      have_sdcard: true,
+      have_oled: true,
+      auto_backup_busy: false,
+      auto_backup_on_connect: demoAutoBackupOnConnect,
+    };
+  }
 
   function jsonResponse(body, status = 200) {
     return new Response(JSON.stringify(body), {
@@ -120,30 +189,39 @@
     if (p === '/login' && m === 'POST') {
       return jsonResponse({ token: 'demo-token', expires_in: 3600 });
     }
+    if (p === '/token/refresh' && m === 'POST') {
+      return jsonResponse({ token: 'demo-token', expires_in: 3600 });
+    }
+    if (p === '/onboarding' && m === 'GET') {
+      return jsonResponse({ onboarding_complete: true });
+    }
+
+    if ((p === '/neo/manager' || p === '/neo/rescan') && m === 'POST') {
+      demoManagerMode = true;
+      if (p === '/neo/rescan') {
+        return jsonResponse({ ok: true, neo_ready: true, bus_devices: 1 });
+      }
+      return emptyOk();
+    }
+    if (p === '/neo/restart' && m === 'POST') {
+      demoManagerMode = false;
+      return emptyOk();
+    }
 
     if (p === '/status' || p === '/usb/status') {
-      return jsonResponse({
-        usb_connected: true,
-        usb_keyboard_active: true,
-        usb_neo_ready: false,
-        product: 'AlphaSmart Neo2',
-        usb_bus_devices: 1,
-        usb_host_active: true,
-        usb_flipping: false,
-        ip: '192.168.8.244',
-        ble_state: 'idle',
-        have_sdcard: true,
-        have_oled: true,
-        auto_backup_busy: false,
-        auto_backup_on_connect: demoAutoBackupOnConnect,
-      });
+      return jsonResponse(demoUsbStatus());
     }
 
     if (p === '/command/info') {
-      return jsonResponse({ version: 'Neo2', free_rom: 120832, free_ram: 32768 });
+      return jsonResponse({
+        version: 'Neo2',
+        free_rom: 120832,
+        free_ram: 32768,
+        mode: demoManagerMode ? 'manager' : 'keyboard',
+      });
     }
     if (p === '/command/mode') {
-      return jsonResponse({ mode: 'keyboard' });
+      return jsonResponse({ mode: demoManagerMode ? 'manager' : 'keyboard' });
     }
     if (p === '/command/list_applets') {
       return jsonResponse(DEMO_APPLETS);
@@ -296,7 +374,7 @@
     }
 
     if (p === '/neo/files') {
-      return jsonResponse(DEMO_NEO_FILES.filter((f) => (f.used_size || f.size || 0) > 0));
+      return jsonResponse(DEMO_NEO_FILES);
     }
 
     const neoFileTransfer = p.match(/^\/neo\/applets\/(\d+)\/files\/(\d+)\/(download|read)$/);
@@ -335,10 +413,12 @@
     }
 
     if (p.startsWith('/files/view')) {
-      return jsonResponse({ name: 'Chapter one', content: DEMO_SAMPLE_DOC });
+      const name = new URLSearchParams(query).get('name') || DEMO_BACKUPS[0].name;
+      return jsonResponse({ name, content: demoBackupText(name) });
     }
     if (p.startsWith('/files/download')) {
-      return textResponse(DEMO_SAMPLE_DOC);
+      const name = new URLSearchParams(query).get('name') || DEMO_BACKUPS[0].name;
+      return textResponse(demoBackupText(name));
     }
 
     if (p === '/keyboard/recent') {
@@ -361,8 +441,8 @@
           text: demoLiveText,
           sequence: demoLiveSeq,
           usb_connected: true,
-          usb_keyboard_active: true,
-          usb_neo_ready: false,
+          usb_keyboard_active: !demoManagerMode,
+          usb_neo_ready: demoManagerMode,
         }),
         {
           status: 200,

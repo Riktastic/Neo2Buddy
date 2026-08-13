@@ -60,12 +60,14 @@ $readme = @"
 
 $profileNote
 
-## Setup utility
+## Setup (recommended)
 
-Use **Neo2 Buddy Setup** and pick this folder as the firmware profile
+Download **Setup** from the GitHub release (``Setup-windows``, ``Setup-macos``, or ``Setup-linux``), unzip, and run it. Pick this folder as the firmware profile
 (``releases/$Version$suffix``), or Advanced → Choose folder.
 
 UART slim: after install, open a serial terminal at 115200 baud (no Wi‑Fi portal).
+
+How to flash: https://github.com/Riktastic/Neo2Buddy/blob/main/docs/flashing.md
 
 ## esptool
 

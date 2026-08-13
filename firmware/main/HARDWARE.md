@@ -1,5 +1,7 @@
 Hardware requirements and notes
 
+User-facing cable and 5 V: [docs/cable.md](../../docs/cable.md). Optional SD: [docs/sd-card.md](../../docs/sd-card.md). Reference board for shipping firmware is an **ESP32-S3 with a dedicated USB OTG host port** (e.g. Olimex ESP32-S3-DevKit-Lipo). The round LCD notes below are historical and are not the shipping UI (the portal is).
+
 Target platform
 ---------------
 
@@ -27,7 +29,7 @@ USB/NEO transport notes
 
 - USB OTG host support is mandatory to implement the NEO USB transport (`neo/usb_host_neo.c`). The current repository contains a simulated host for UI development; replace with board-tested host code before fielding.
 - Validate VID/PID enumeration and bulk endpoint availability on your chosen board and USB connector wiring.
-- A field-tested **split power/data cable** for the AlphaSmart Neo 2 is documented in [docs/neo2-usb-wiring.md](../../docs/neo2-usb-wiring.md). It lets the Neo run in normal writing mode on power alone and switch to transfer/management mode **immediately** when the ESP32 OTG data path is connected — no Neo reboot required.
+- A field-tested **split power/data cable** for the AlphaSmart Neo 2 is documented in [docs/cable.md](../../docs/cable.md).
 
 Development and testing
 -----------------------
@@ -40,5 +42,5 @@ TODOs
 
 - Add a board-specific `board_config.h` example for the reference S3 touch LCD board.
 - Provide recommended wiring diagrams for the microSD breakout and USB connector.
-  Neo 2 split power/data harness: [docs/neo2-usb-wiring.md](../../docs/neo2-usb-wiring.md).
+  Neo 2 split power/data harness: [docs/cable.md](../../docs/cable.md).
 - Add a small hardware validation suite in `services/` that runs self-tests at first boot.

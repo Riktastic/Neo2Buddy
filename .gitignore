@@ -59,4 +59,8 @@ releases/**/neo2buddy-setup-macos/
 releases/**/neo2buddy-setup-linux/
 releases/**/neo2buddy-setup-*/
 !releases/**/neo2buddy-setup-*.zip
+releases/**/Setup-windows*/
+releases/**/Setup-macos*/
+releases/**/Setup-linux*/
+!releases/**/Setup-*.zip
 

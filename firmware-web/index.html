@@ -507,7 +507,7 @@
     function next() {
       if (n >= list.length) return;
       var s = document.createElement('script');
-      s.src = list[n++] + bust;
+      s.src = list[n++] + bust + (list[n - 1].indexOf('demo.js') >= 0 ? '&s=3' : '');
       s.onload = s.onerror = next;
       document.body.appendChild(s);
     }

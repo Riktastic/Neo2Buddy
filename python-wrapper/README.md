@@ -1,8 +1,7 @@
 # Neo2 Buddy Python wrapper
 
 HTTP client and CLI for a Neo2 Buddy on your network. Same `/api/v1` surface as
-the web portal: backups, Neo USB ops, local files, Wi‑Fi, cloud sync, BLE text
-relay, logs, and diagnostics.
+the web portal. Daily use of the device itself: [docs/using.md](../docs/using.md).
 
 Requires a firmware build with the **Wi‑Fi / web portal** enabled (Full, Headless,
 or No-BLE profiles). UART-slim images have no HTTP API — use the serial console
@@ -84,7 +83,7 @@ neo2buddy decks list
 neo2buddy decks push en-nl-basic
 neo2buddy decks save my-vocab cards.txt --name "My vocab"
 
-# BLE: portal text → paired host (not Neo key passthrough)
+# BLE: Neo keys pass through while paired; send = extra portal text
 neo2buddy ble status
 neo2buddy ble preview "Hello world"
 neo2buddy ble send
@@ -98,7 +97,7 @@ Examples: [`examples/`](examples/).
 ## Notes
 
 - Backup / scan / read / write on the Neo interrupt keyboard mode (same as the portal).
-- BLE send is wrapper/portal text only; Neo keystrokes stay on USB.
+- While Bluetooth is paired, Neo keys are typed on the host. `ble send` is extra portal text to the same host.
 
 ## API surface
 

@@ -3,7 +3,7 @@
 This document records **what we tried**, **what failed**, and **why the current
 approach is the one that works** for AlphaSmart Neo2 + ESP32-S3 (Olimex OTG1).
 
-Companion wiring notes: [`docs/neo2-usb-wiring.md`](../../docs/neo2-usb-wiring.md).  
+Companion wiring notes: [`docs/cable.md`](../../docs/cable.md).  
 Code map: [`main/neo/README.md`](../main/neo/README.md).
 
 ---

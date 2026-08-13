@@ -33,15 +33,15 @@ foreach ($rel in $files) {
 $readme = @"
 # Neo2 Buddy firmware $Version
 
-## Easiest: Setup utility (no ESP-IDF)
+## Install with Setup (recommended)
 
-Download **``neo2buddy-setup-$Version.zip``** from the [GitHub release](https://github.com/Riktastic/Neo2Buddy/releases) for this version.
+Download **Setup** for your computer from the [GitHub release](https://github.com/Riktastic/Neo2Buddy/releases):
 
-1. Unzip it.
-2. Double-click ``Run Setup.bat`` (Windows) or see README inside the zip for macOS/Linux.
-3. Plug in the board’s **programming USB** port, pick the COM port, click **Install firmware**.
+- ``Setup-windows-$Version.zip`` → ``Neo2BuddySetup.exe``
+- ``Setup-macos-$Version.zip`` → ``Neo2BuddySetup.app``
+- ``Setup-linux-$Version.zip`` → ``./Neo2BuddySetup``
 
-Requires [Python 3.10+](https://www.python.org/downloads/) with Tk (included on Windows/macOS).
+Unzip and run it. **No extra software.** The app shows how to prepare the ESP32 and installs this firmware.
 
 ## Advanced: esptool
 
@@ -58,7 +58,7 @@ Python client: ``python-wrapper/`` (``neo2buddy`` CLI).
 
 ## Known behaviour
 
-- Neo USB-B needs 5 V for enumeration (see docs/neo2-usb-wiring.md).
+- Neo USB-B needs 5 V for enumeration (see docs/cable.md).
 - Backup / scan / read / write interrupt Neo keyboard mode. Backup now/all return to keyboard; a single Read may need Keyboard mode.
 - BLE: use **Pair keyboard** in the portal (2-minute window). Neo keys pass through while connected; Documents/ASM actions can pause keystrokes until keyboard mode returns.
 - Applet Store installs are **paused** in 1.0.0 while stock SmartApplets receive more testing (binaries remain in firmware; Flash Cards deck library still works). Set ``STOCK_STORE_INSTALLS_ENABLED`` to 1 to re-enable.

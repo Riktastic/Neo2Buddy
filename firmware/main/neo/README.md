@@ -5,7 +5,7 @@ USB OTG. We emulate [NeoTools](https://github.com/alphasmart/neotools) byte-for-
 where hardware has proven it matters.
 
 **Design history:** [`../../docs/neo-usb-and-backup.md`](../../docs/neo-usb-and-backup.md)  
-**USB wiring:** [`../../../docs/neo2-usb-wiring.md`](../../../docs/neo2-usb-wiring.md)
+**USB wiring (user guide):** [`../../../docs/cable.md`](../../../docs/cable.md)
 
 ---
 

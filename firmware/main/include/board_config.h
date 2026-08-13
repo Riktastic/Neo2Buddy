@@ -52,7 +52,7 @@
  *   OTG1  = native ESP32 USB (GPIO19/20) — Neo2 data connection.
  *   Other USB-C = CH340 serial (COM port for flash/monitor).
  * Neo2 power: **5 V required on USB-B** for emulation/USB (power bank OK). Internal
- * AAs run normal writing only — they do not wake USB for the buddy. See docs/neo2-usb-wiring.md.
+ * AAs run normal writing only — they do not wake USB for the buddy. See docs/cable.md.
  */
 #define BOARD_USB_OTG_PORT_LABEL "OTG1"
 
