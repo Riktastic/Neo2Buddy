@@ -87,15 +87,23 @@ jobs:
 
       - name: Package Windows zip
         if: matrix.artifact == 'windows'
-        shell: bash
+        shell: pwsh
+        env:
+          SETUP_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          V="${{ needs.resolve.outputs.version }}"
-          DIST="flasher/_native_stage/dist/Neo2BuddySetup"
-          echo "Neo2 Buddy Setup $V (Windows)" > "$DIST/README.txt"
-          echo "Unzip, then run Neo2BuddySetup.exe. No extra software to install." >> "$DIST/README.txt"
-          mkdir -p "releases/$V"
-          # windows-latest Git Bash has no `zip`; Python is already on the runner.
-          python -c "import shutil; shutil.make_archive(r'releases/$V/Setup-windows-$V', 'zip', r'flasher/_native_stage/dist', 'Neo2BuddySetup')"
+          $dist = "flasher/_native_stage/dist/Neo2BuddySetup"
+          if (-not (Test-Path $dist)) { throw "PyInstaller output missing: $dist" }
+          @(
+            "Neo2 Buddy Setup $($env:SETUP_VERSION) (Windows)"
+            "Unzip, then run Neo2BuddySetup.exe. No extra software to install."
+          ) | Set-Content -Path (Join-Path $dist "README.txt") -Encoding UTF8
+          $outDir = "releases/$($env:SETUP_VERSION)"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $zip = Join-Path $outDir "Setup-windows-$($env:SETUP_VERSION).zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $dist -DestinationPath $zip -Force
+          Get-Item $zip | Format-List FullName, Length
+
 
       - name: Package macOS zip
         if: matrix.artifact == 'macos'
