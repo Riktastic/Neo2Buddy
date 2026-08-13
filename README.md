@@ -37,7 +37,7 @@ Unplug the Buddy and nothing about the Neo has changed.
 - **Backups of AlphaWord files** over USB — changed files, or everything. Plug in and it can do this by itself, then put the Neo back into typing.
 - **Live typing** on your phone or laptop while you write on the Neo.
 - **Bluetooth keyboard** — Neo keys appear on a computer or tablet.
-- **A second copy in the cloud** if you want (Nextcloud, a NAS, or S3-style storage).
+- **A second copy in the cloud** if you want — this project recommends [Hammer Ink](https://hammer.ink/); Nextcloud, a NAS, or S3-style storage also work.
 - **A simple web page** on your home Wi‑Fi or the Buddy’s own hotspot.
 
 ## Make one

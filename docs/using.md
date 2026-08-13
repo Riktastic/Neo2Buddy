@@ -37,11 +37,31 @@ After a firmware update, remove Neo2 Buddy from the computer’s Bluetooth list 
 
 ## Cloud copies (optional)
 
-Under **Cloud sync**, point at WebDAV (Nextcloud, many NAS boxes), S3-compatible storage, or Hammer Ink. **Test connection** first. Local files stay on the Buddy; upload never deletes them.
+Local backups stay on the Buddy. Cloud upload is a second copy somewhere else. It never deletes the files on the board or the SD card.
 
-Home Wi‑Fi with internet is required. S3 also needs a correct clock (the Buddy sets time over the network).
+**This project recommends [Hammer Ink](https://hammer.ink/).** Hammer is a free, open-source writing app (Windows, Mac, Linux, phone) built for novels: scenes, notes, an encyclopedia, a timeline. Your book lives as ordinary files in a folder you own. Sync between devices is optional. The Buddy can send Neo backups into that same world as **Notes** in a Hammer project, so drafts from the Neo sit next to the manuscript instead of in a random cloud folder.
 
-Optional: **Auto cloud upload after backup**. Provider details: [cloud sync](../firmware/docs/cloud-sync.md). To pull files from a PC on a schedule, see the [Python tool](../python-wrapper/README.md).
+Official [hammer.ink](https://hammer.ink/) sync may need a Patreon-backed account. You can also point Hammer at a server you run yourself; the Buddy talks to the official server by default.
+
+### Set up Hammer on the Buddy
+
+You need home Wi‑Fi with internet (the Buddy hotspot alone cannot reach hammer.ink).
+
+1. Create a Hammer account at [hammer.ink](https://hammer.ink/) if you do not have one.
+2. In the portal, open **Cloud sync**.
+3. Choose **Hammer Ink**. Leave the server as `https://hammer.ink` unless you run your own.
+4. Enter the **email** and **password** for that account.
+5. Set the **project name** (default `Neo2 Buddy`). Hammer creates that project on the first successful upload if it is missing.
+6. Save, then **Test connection**.
+7. Optionally turn on **Auto cloud upload after backup** in Settings.
+
+Each local `.txt` backup becomes a Note in that project. Later uploads update the same notes; they do not duplicate forever. This is a one-way copy from the Buddy into Hammer. It does not pull Hammer scenes back onto the Neo.
+
+### Other destinations
+
+WebDAV (Nextcloud, many NAS boxes) and S3-compatible storage (R2, B2, MinIO) still work if you already have them. **Test connection** first. S3 also needs a correct clock (the Buddy sets time over the network).
+
+Provider details: [cloud sync](../firmware/docs/cloud-sync.md). To pull files from a PC on a schedule, see the [Python tool](../python-wrapper/README.md).
 
 ## Files and applets
 

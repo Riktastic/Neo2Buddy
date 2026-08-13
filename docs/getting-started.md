@@ -49,6 +49,6 @@ UART-only images have no web page. Use a serial terminal at **115200** baud inst
 - Finish a writing session, plug in, walk away: changed files are saved, Neo goes back to typing.
 - Sit with the Neo in your lap and type into Google Docs / Word over Bluetooth.
 - Glance at a phone to see the last lines you typed.
-- Keep a copy on Nextcloud or a NAS if you want a second home for drafts.
+- Keep a copy in [Hammer](https://hammer.ink/) (recommended), or on Nextcloud / a NAS, if you want a second home for drafts.
 
 Next: [Using Neo2 Buddy](using.md). Stuck? [Troubleshooting](troubleshooting.md).
